@@ -1,0 +1,125 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+  /* Primary Brand Identity Tokens (Strictly Dark Teal #1B4965 & Mint Green #2EC4B6) */
+  --color-brand-teal: #1B4965;
+  --color-brand-mint: #2EC4B6;
+  --color-brand-teal-dark: #113043;
+  --color-brand-mint-dark: #1fa296;
+  --color-brand-mint-light: #e8f9f7;
+  --color-brand-teal-light: #eef6f9;
+
+  /* Full Dark Teal Scale (#1B4965 is 800) */
+  --color-dark-teal-50: #f0f7fa;
+  --color-dark-teal-100: #dcebf2;
+  --color-dark-teal-200: #bdd8e6;
+  --color-dark-teal-300: #8ebdd4;
+  --color-dark-teal-400: #579ebd;
+  --color-dark-teal-500: #3882a2;
+  --color-dark-teal-600: #2c6884;
+  --color-dark-teal-700: #25546c;
+  --color-dark-teal-800: #1b4965;
+  --color-dark-teal-900: #1b3d52;
+  --color-dark-teal-950: #0d212d;
+
+  /* Full Mint Green Scale (#2EC4B6 is 500) */
+  --color-mint-50: #eefbf9;
+  --color-mint-100: #d5f6f1;
+  --color-mint-200: #adeee3;
+  --color-mint-300: #74ded1;
+  --color-mint-400: #42c8bc;
+  --color-mint-500: #2ec4b6;
+  --color-mint-600: #1f9f94;
+  --color-mint-700: #1c7e77;
+  --color-mint-800: #1a645f;
+  --color-mint-900: #1a534f;
+  --color-mint-950: #072e2c;
+
+  /* Elevated Surface Neutrals with Clinical Warmth/Teal tint */
+  --color-surface-bg-light: #f8fafc;
+  --color-surface-card-light: #ffffff;
+  --color-surface-bg-dark: #071520;
+  --color-surface-card-dark: #0d2232;
+  --color-surface-card-dark-hover: #122c40;
+
+  /* Premium Soft Shadows */
+  --shadow-soft-xs: 0 1px 2px 0 rgba(15, 23, 42, 0.04);
+  --shadow-soft-sm: 0 2px 5px -1px rgba(15, 23, 42, 0.05), 0 1px 3px -1px rgba(15, 23, 42, 0.03);
+  --shadow-soft-md: 0 6px 16px -2px rgba(15, 23, 42, 0.06), 0 2px 6px -1px rgba(15, 23, 42, 0.03);
+  --shadow-soft-lg: 0 12px 28px -4px rgba(15, 23, 42, 0.08), 0 4px 10px -2px rgba(15, 23, 42, 0.04);
+  --shadow-soft-xl: 0 20px 40px -6px rgba(15, 23, 42, 0.1), 0 8px 16px -4px rgba(15, 23, 42, 0.05);
+  --shadow-soft-2xl: 0 32px 64px -12px rgba(15, 23, 42, 0.18);
+  --shadow-glow-mint: 0 0 24px -2px rgba(46, 196, 182, 0.35);
+  --shadow-glow-teal: 0 0 28px -4px rgba(27, 73, 101, 0.4);
+}
+
+/* Custom Base Utilities & Typographic Polish */
+@layer base {
+  *, ::after, ::before {
+    border-color: var(--color-slate-200);
+  }
+  .dark *, .dark ::after, .dark ::before {
+    border-color: rgba(37, 84, 108, 0.35);
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--color-surface-bg-light);
+    color: #0f172a;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  .dark body {
+    background-color: var(--color-surface-bg-dark);
+    color: #f1f5f9;
+  }
+}
+
+/* Custom Glassmorphism, Micro-interaction & Component Classes */
+@utility glass-card {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+}
+
+@utility dark-glass-card {
+  background: rgba(13, 34, 50, 0.82);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(44, 104, 132, 0.35);
+}
+
+@utility glass-card-elevated {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(240, 247, 250, 0.85) 100%);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 10px 30px -5px rgba(27, 73, 101, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+}
+
+@utility dark-glass-card-elevated {
+  background: linear-gradient(135deg, rgba(13, 34, 50, 0.9) 0%, rgba(7, 21, 32, 0.95) 100%);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(44, 104, 132, 0.4);
+  box-shadow: 0 12px 36px -6px rgba(0, 0, 0, 0.4);
+}
+
+@utility font-tabular {
+  font-feature-settings: 'tnum', 'cv02', 'cv03', 'cv04', 'cv11';
+}
+
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 1rem);
+}
