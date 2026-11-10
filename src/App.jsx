@@ -10,6 +10,7 @@ import Landing from './pages/Landing'
 import PharmacistDashboard from './pages/PharmacistDashboard'
 import PatientDashboard from './pages/PatientDashboard'
 import ProtectedRoute from './components/auth/ProtectedRoute'
+import ScrollToTop from './components/common/ScrollToTop'
 import { useAuth } from './hooks/useAuth'
 import { applyDocumentDirection } from './i18n'
 
@@ -23,7 +24,7 @@ function PharmacistLoginRoute() {
 
   useEffect(() => {
     if (user && role === 'pharmacist') {
-      navigate('/pharmacist', { replace: true })
+      navigate('/pharmacist')
     }
   }, [user, role, navigate])
 
@@ -31,7 +32,7 @@ function PharmacistLoginRoute() {
     <PageWrapper>
       <PharmacistLogin 
         onSuccess={() => {
-          navigate('/pharmacist', { replace: true })
+          navigate('/pharmacist')
         }} 
       />
     </PageWrapper>
@@ -45,7 +46,7 @@ function PatientLoginRoute() {
 
   useEffect(() => {
     if (user && role === 'patient') {
-      navigate('/patient', { replace: true })
+      navigate('/patient')
     }
   }, [user, role, navigate])
 
@@ -53,7 +54,7 @@ function PatientLoginRoute() {
     <PageWrapper>
       <PatientLogin 
         onSuccess={() => {
-          navigate('/patient', { replace: true })
+          navigate('/patient')
         }} 
       />
     </PageWrapper>
@@ -71,9 +72,9 @@ function SmartLoginRoute() {
   useEffect(() => {
     if (user && role) {
       if (role === 'pharmacist') {
-        navigate('/pharmacist', { replace: true })
+        navigate('/pharmacist')
       } else {
-        navigate('/patient', { replace: true })
+        navigate('/patient')
       }
     }
   }, [user, role, navigate])
@@ -82,11 +83,11 @@ function SmartLoginRoute() {
     <PageWrapper>
       {defaultRole === 'pharmacist' ? (
         <PharmacistLogin 
-          onSuccess={() => navigate('/pharmacist', { replace: true })} 
+          onSuccess={() => navigate('/pharmacist')} 
         />
       ) : (
         <PatientLogin 
-          onSuccess={() => navigate('/patient', { replace: true })} 
+          onSuccess={() => navigate('/patient')} 
         />
       )}
     </PageWrapper>
@@ -108,8 +109,10 @@ export default function App() {
   // =========================================================================
   if (APP_MODE === 'pharmacist') {
     return (
-      <AppLayout>
-        <AnimatePresence mode="wait">
+      <>
+        <ScrollToTop />
+        <AppLayout>
+          <AnimatePresence mode="wait">
           <Routes location={location} key={location.pathname}>
             {/* Root Route: If authenticated, open Dashboard; otherwise PharmacistLogin */}
             <Route 
@@ -146,15 +149,18 @@ export default function App() {
           </Routes>
         </AnimatePresence>
       </AppLayout>
-    )
-  }
+    </>
+  )
+}
 
-  // =========================================================================
-  // 2. DEDICATED PATIENT DEPLOYMENT (VITE_APP_MODE === 'patient')
-  // Pharmacist routes are completely excluded. Users only ever see the Patient Portal.
-  // =========================================================================
-  if (APP_MODE === 'patient') {
-    return (
+// =========================================================================
+// 2. DEDICATED PATIENT DEPLOYMENT (VITE_APP_MODE === 'patient')
+// Pharmacist routes are completely excluded. Users only ever see the Patient Portal.
+// =========================================================================
+if (APP_MODE === 'patient') {
+  return (
+    <>
+      <ScrollToTop />
       <AppLayout>
         <AnimatePresence mode="wait">
           <Routes location={location} key={location.pathname}>
@@ -193,14 +199,17 @@ export default function App() {
           </Routes>
         </AnimatePresence>
       </AppLayout>
-    )
-  }
+    </>
+  )
+}
 
-  // =========================================================================
-  // 3. LOCAL DEVELOPMENT / DUAL PORTAL MODE (VITE_APP_MODE is undefined)
-  // Provides Landing page selector at `/` and supports both portals for easy testing.
-  // =========================================================================
-  return (
+// =========================================================================
+// 3. LOCAL DEVELOPMENT / DUAL PORTAL MODE (VITE_APP_MODE is undefined)
+// Provides Landing page selector at `/` and supports both portals for easy testing.
+// =========================================================================
+return (
+  <>
+    <ScrollToTop />
     <AppLayout>
       <AnimatePresence mode="wait">
         <Routes location={location} key={location.pathname}>
@@ -241,5 +250,6 @@ export default function App() {
         </Routes>
       </AnimatePresence>
     </AppLayout>
-  )
+  </>
+)
 }

@@ -52,7 +52,7 @@ export default function ProtectedRoute({ children, allowedRoles = [] }) {
   if (!hasMatchingRole) {
     const handleSignOutAndSwitch = async () => {
       await signOut()
-      navigate('/login', { replace: true })
+      navigate('/login')
     }
 
     // In isolated single-portal mode (Vercel deployment)

@@ -72,7 +72,7 @@ export default function Navbar() {
   const handleSignOut = async () => {
     setMobileMenuOpen(false)
     await signOut()
-    navigate('/login', { replace: true })
+    navigate('/login')
   }
 
   // Assigned portal path based on environment mode and role
@@ -97,27 +97,27 @@ export default function Navbar() {
 
   return (
     <header className="sticky top-0 z-50 backdrop-blur-xl bg-white/85 dark:bg-[#071520]/85 border-b border-slate-200/80 dark:border-dark-teal-800/50 pt-[env(safe-area-inset-top,0px)] transition-colors duration-300">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 sm:h-20 gap-3">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-16 sm:h-20 gap-1.5 sm:gap-3">
           {/* Logo & Brand Identity */}
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 shrink">
             <Link 
               to={assignedPortalPath}
-              className="flex items-center gap-3 group focus:outline-none focus:ring-2 focus:ring-brand-mint/60 rounded-2xl p-1.5 transition-transform duration-200 active:scale-95"
+              className="flex items-center gap-2 sm:gap-3 min-w-0 group focus:outline-none focus:ring-2 focus:ring-brand-mint/60 rounded-2xl p-1 transition-transform duration-200 active:scale-95"
             >
               <img 
                 src={getBrandLogo(role)} 
                 alt="Pharminder Logo" 
-                className="w-10 h-10 sm:w-11 sm:h-11 object-contain transition-transform duration-300 group-hover:scale-105 drop-shadow-sm shrink-0" 
+                className="w-8 h-8 sm:w-10 sm:h-10 md:w-11 md:h-11 object-contain transition-transform duration-300 group-hover:scale-105 drop-shadow-sm shrink-0" 
               />
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xl sm:text-2xl font-black tracking-tight text-brand-teal dark:text-mint-300 font-sans">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1 sm:gap-1.5">
+                  <span className="text-lg sm:text-xl md:text-2xl font-black tracking-tight text-brand-teal dark:text-mint-300 font-sans truncate">
                     pharminder
                   </span>
-                  <span className="w-2 h-2 rounded-full bg-brand-mint animate-pulse" />
+                  <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-brand-mint animate-pulse shrink-0" />
                 </div>
-                <p className="text-[10px] sm:text-[11px] font-semibold tracking-wide text-slate-500 dark:text-slate-400 hidden sm:block">
+                <p className="text-[10px] sm:text-[11px] font-semibold tracking-wide text-slate-500 dark:text-slate-400 hidden sm:block truncate">
                   {appSubtitle}
                 </p>
               </div>
@@ -172,13 +172,13 @@ export default function Navbar() {
           </div>
 
           {/* Right Action Controls: PWA Install, Theme Toggle, Auth Profile & Sign Out */}
-          <div className="flex items-center gap-2 sm:gap-2.5">
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             {/* PWA Install Button when browser fires beforeinstallprompt */}
             {deferredPrompt && !isInstalled && (
               <button
                 type="button"
                 onClick={handleInstallPwa}
-                className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 rounded-2xl text-xs font-extrabold bg-brand-mint text-dark-teal-950 hover:bg-mint-400 shadow-sm shadow-brand-mint/20 transition-all active:scale-95 cursor-pointer"
+                className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 rounded-2xl text-xs font-extrabold bg-brand-mint text-dark-teal-950 hover:bg-mint-400 shadow-sm shadow-brand-mint/20 transition-all active:scale-95 cursor-pointer shrink-0"
                 title="Install Pharminder PWA to your device"
               >
                 <Download className="w-3.5 h-3.5" />
@@ -190,18 +190,18 @@ export default function Navbar() {
             <button
               type="button"
               onClick={toggleTheme}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-2xl text-xs font-bold border border-slate-200/80 dark:border-dark-teal-800/60 bg-white/80 dark:bg-dark-teal-950/60 text-slate-700 dark:text-slate-200 hover:border-brand-mint/40 dark:hover:border-mint-400/40 transition-all duration-200 active:scale-95 shadow-xs cursor-pointer"
+              className="flex items-center justify-center p-2 sm:px-3 sm:py-2 rounded-xl sm:rounded-2xl text-xs font-bold border border-slate-200/80 dark:border-dark-teal-800/60 bg-white/80 dark:bg-dark-teal-950/60 text-slate-700 dark:text-slate-200 hover:border-brand-mint/40 dark:hover:border-mint-400/40 transition-all duration-200 active:scale-95 shadow-xs cursor-pointer shrink-0"
               aria-label={`Switch to ${isDark ? 'light' : 'dark'} mode`}
               title={`Switch to ${isDark ? 'light' : 'dark'} mode`}
             >
               {isDark ? (
                 <>
-                  <Sun className="w-4 h-4 text-amber-400 transition-transform duration-300 hover:rotate-90" />
+                  <Sun className="w-4 h-4 text-amber-400 transition-transform duration-300 hover:rotate-90 shrink-0" />
                   <span className="hidden xl:inline font-semibold">{t('nav.themeLight')}</span>
                 </>
               ) : (
                 <>
-                  <Moon className="w-4 h-4 text-brand-teal transition-transform duration-300 hover:-rotate-45" />
+                  <Moon className="w-4 h-4 text-brand-teal transition-transform duration-300 hover:-rotate-45 shrink-0" />
                   <span className="hidden xl:inline font-semibold">{t('nav.themeDark')}</span>
                 </>
               )}
@@ -211,21 +211,24 @@ export default function Navbar() {
             <button
               type="button"
               onClick={toggleLanguage}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-2xl text-xs font-bold border border-slate-200/80 dark:border-dark-teal-800/60 bg-white/80 dark:bg-dark-teal-950/60 text-slate-700 dark:text-slate-200 hover:border-brand-mint/40 dark:hover:border-mint-400/40 transition-all duration-200 active:scale-95 shadow-xs cursor-pointer"
+              className="flex items-center gap-1 sm:gap-1.5 p-2 sm:px-3 sm:py-2 rounded-xl sm:rounded-2xl text-xs font-bold border border-slate-200/80 dark:border-dark-teal-800/60 bg-white/80 dark:bg-dark-teal-950/60 text-slate-700 dark:text-slate-200 hover:border-brand-mint/40 dark:hover:border-mint-400/40 transition-all duration-200 active:scale-95 shadow-xs cursor-pointer shrink-0"
               aria-label={`Switch language to ${i18n.language === 'ar' ? 'English' : 'العربية'}`}
               title={`Switch language to ${i18n.language === 'ar' ? 'English' : 'العربية'}`}
             >
               <Languages className="w-4 h-4 text-brand-mint shrink-0" />
-              <span className="font-extrabold tracking-tight">
+              <span className="font-extrabold tracking-tight hidden sm:inline">
                 {i18n.language === 'ar' ? 'English' : 'العربية'}
+              </span>
+              <span className="font-black text-[11px] sm:hidden">
+                {i18n.language === 'ar' ? 'EN' : 'ع'}
               </span>
             </button>
 
             {/* User Profile / Auth State Badge */}
             {user ? (
-              <div className="flex items-center gap-2.5 pl-2 border-l border-slate-200 dark:border-dark-teal-800/60">
-                <div className="hidden sm:flex flex-col text-right leading-tight">
-                  <span className="text-xs font-extrabold text-slate-900 dark:text-slate-100 truncate max-w-[140px]">
+              <div className="flex items-center gap-1 sm:gap-2.5 ps-1 sm:ps-2.5 ms-0.5 sm:ms-1 border-s border-slate-200 dark:border-dark-teal-800/60 shrink-0">
+                <div className="hidden lg:flex flex-col text-end leading-tight">
+                  <span className="text-xs font-extrabold text-slate-900 dark:text-slate-100 truncate max-w-[130px]">
                     {profile?.full_name || user.email?.split('@')[0]}
                   </span>
                   <span className="text-[10px] uppercase font-bold tracking-wider text-brand-mint">
@@ -234,11 +237,12 @@ export default function Navbar() {
                 </div>
 
                 <div
-                  className={`w-9 h-9 rounded-2xl flex items-center justify-center text-white shadow-xs ${
+                  className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl sm:rounded-2xl flex items-center justify-center text-white shadow-xs shrink-0 ${
                     role === 'pharmacist'
                       ? 'bg-gradient-to-br from-brand-teal to-dark-teal-900'
                       : 'bg-gradient-to-br from-brand-mint to-teal-600'
                   }`}
+                  title={profile?.full_name || user.email}
                 >
                   {role === 'pharmacist' ? (
                     <Stethoscope className="w-4 h-4 text-brand-mint" />
@@ -250,23 +254,26 @@ export default function Navbar() {
                 <button
                   type="button"
                   onClick={handleSignOut}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-50/80 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-200/60 dark:border-rose-800/60 transition-colors cursor-pointer"
+                  className="hidden md:inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-50/80 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-200/60 dark:border-rose-800/60 transition-colors cursor-pointer shrink-0"
                   title="Sign out of current portal"
                   aria-label="Sign out"
                 >
                   <LogOut className="w-3.5 h-3.5" />
-                  <span className="hidden lg:inline">Sign Out</span>
+                  <span className="hidden xl:inline">Sign Out</span>
                 </button>
               </div>
             ) : (
               location.pathname !== '/login' && location.pathname !== '/login/patient' && location.pathname !== '/login/pharmacist' && (
                 <Link
                   to="/login"
-                  className="flex items-center gap-1.5 px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold bg-gradient-to-r from-brand-teal to-dark-teal-900 hover:from-dark-teal-800 hover:to-dark-teal-950 text-white shadow-md shadow-brand-teal/20 transition-all duration-200 active:scale-95"
+                  className="flex items-center gap-1 sm:gap-1.5 px-2.5 py-1.5 sm:px-4 sm:py-2.5 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold bg-gradient-to-r from-brand-teal to-dark-teal-900 hover:from-dark-teal-800 hover:to-dark-teal-950 text-white shadow-md shadow-brand-teal/20 transition-all duration-200 active:scale-95 shrink-0"
                 >
-                  <LogIn className="w-4 h-4 text-brand-mint" />
-                  <span>
+                  <LogIn className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-brand-mint shrink-0" />
+                  <span className="hidden sm:inline">
                     {APP_MODE === 'pharmacist' ? 'Doctor Sign In' : APP_MODE === 'patient' ? 'Patient Sign In' : 'Sign In'}
+                  </span>
+                  <span className="sm:hidden text-xs">
+                    {t('nav.signIn')}
                   </span>
                 </Link>
               )
@@ -276,10 +283,10 @@ export default function Navbar() {
             <button
               type="button"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="md:hidden p-2 rounded-2xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-dark-teal-950 transition-colors cursor-pointer"
+              className="md:hidden p-1.5 sm:p-2 rounded-xl sm:rounded-2xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-dark-teal-950 transition-colors cursor-pointer shrink-0"
               aria-label="Toggle navigation menu"
             >
-              {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+              {mobileMenuOpen ? <X className="w-5 h-5 sm:w-6 sm:h-6" /> : <Menu className="w-5 h-5 sm:w-6 sm:h-6" />}
             </button>
           </div>
         </div>

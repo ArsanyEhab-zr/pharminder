@@ -25,7 +25,7 @@ export default function AppLayout({ children }) {
 
   const handleMobileSignOut = async () => {
     await signOut()
-    navigate('/login', { replace: true })
+    navigate('/login')
   }
 
   const footerTagline =
@@ -55,34 +55,34 @@ export default function AppLayout({ children }) {
       {/* Mobile Sticky Bottom App Bar (Role-Isolated Navigation, 48px+ touch targets, PWA Safe Area Dock) */}
       <nav 
         aria-label="Mobile navigation" 
-        className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-[#071520]/95 backdrop-blur-xl border-t border-slate-200/80 dark:border-dark-teal-800/40 px-4 pt-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom,0.75rem))] shadow-soft-xl"
+        className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-[#071520]/95 backdrop-blur-xl border-t border-slate-200/80 dark:border-dark-teal-800/40 px-3 sm:px-4 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom,0.75rem))] shadow-soft-xl"
       >
         {user ? (
-          <div className="grid grid-cols-2 gap-2.5 max-w-md mx-auto">
+          <div className="grid grid-cols-2 gap-2 max-w-md mx-auto">
             {role === 'pharmacist' ? (
               <Link
                 to="/pharmacist"
-                className={`min-h-[48px] rounded-xl flex items-center justify-center gap-2 px-3 transition-all ${
+                className={`min-h-[48px] rounded-xl flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 transition-all ${
                   location.pathname === '/pharmacist'
                     ? 'text-white bg-brand-teal font-black shadow-xs'
                     : 'text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-dark-teal-950 font-bold'
                 }`}
               >
                 <Stethoscope className="w-4 h-4 text-brand-mint shrink-0" />
-                <span className="text-xs tracking-tight truncate">{t('nav.doctorPortal')}</span>
+                <span className="text-xs tracking-tight truncate min-w-0">{t('nav.doctorPortal')}</span>
                 <Lock className="w-3 h-3 opacity-75 shrink-0" />
               </Link>
             ) : (
               <Link
                 to="/patient"
-                className={`min-h-[48px] rounded-xl flex items-center justify-center gap-2 px-3 transition-all ${
+                className={`min-h-[48px] rounded-xl flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 transition-all ${
                   location.pathname === '/patient'
                     ? 'text-dark-teal-950 bg-brand-mint font-black shadow-xs'
                     : 'text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-dark-teal-950 font-bold'
                 }`}
               >
                 <ClipboardList className="w-4 h-4 shrink-0" />
-                <span className="text-xs tracking-tight truncate">{t('nav.patientPortal')}</span>
+                <span className="text-xs tracking-tight truncate min-w-0">{t('nav.patientPortal')}</span>
                 <Lock className="w-3 h-3 opacity-75 shrink-0" />
               </Link>
             )}
@@ -90,10 +90,10 @@ export default function AppLayout({ children }) {
             <button
               type="button"
               onClick={handleMobileSignOut}
-              className="min-h-[48px] rounded-xl flex items-center justify-center gap-2 px-3 text-rose-600 dark:text-rose-400 bg-rose-50/80 dark:bg-rose-950/40 border border-rose-200/60 dark:border-rose-800/50 font-bold text-xs transition-all active:scale-95 cursor-pointer"
+              className="min-h-[48px] rounded-xl flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 text-rose-600 dark:text-rose-400 bg-rose-50/80 dark:bg-rose-950/40 border border-rose-200/60 dark:border-rose-800/50 font-bold text-xs transition-all active:scale-95 cursor-pointer"
             >
               <LogOut className="w-4 h-4 shrink-0" />
-              <span className="truncate">{t('nav.signOut')}</span>
+              <span className="truncate min-w-0">{t('nav.signOut')}</span>
             </button>
           </div>
         ) : (
@@ -103,41 +103,41 @@ export default function AppLayout({ children }) {
                 to="/login"
                 className="w-full min-h-[48px] rounded-xl flex items-center justify-center gap-2 px-3 text-white bg-brand-teal font-black shadow-xs"
               >
-                <LogIn className="w-4 h-4 text-brand-mint" />
-                <span className="text-xs tracking-tight">Doctor Sign In</span>
+                <LogIn className="w-4 h-4 text-brand-mint shrink-0" />
+                <span className="text-xs tracking-tight">{t('nav.doctorSignIn')}</span>
               </Link>
             ) : APP_MODE === 'patient' ? (
               <Link
                 to="/login"
                 className="w-full min-h-[48px] rounded-xl flex items-center justify-center gap-2 px-3 text-dark-teal-950 bg-brand-mint font-black shadow-xs"
               >
-                <LogIn className="w-4 h-4" />
-                <span className="text-xs tracking-tight">Patient Sign In</span>
+                <LogIn className="w-4 h-4 shrink-0" />
+                <span className="text-xs tracking-tight">{t('nav.patientSignIn')}</span>
               </Link>
             ) : (
-              <div className="grid grid-cols-2 gap-2.5">
+              <div className="grid grid-cols-2 gap-2">
                 <Link 
                   to="/" 
-                  className={`min-h-[48px] rounded-xl flex items-center justify-center gap-2 transition-all ${
+                  className={`min-h-[48px] rounded-xl flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 transition-all ${
                     location.pathname === '/' 
                       ? 'text-brand-teal dark:text-mint-300 font-extrabold bg-slate-100/90 dark:bg-dark-teal-950/90' 
                       : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
                   }`}
                 >
-                  <Home className="w-4 h-4" />
-                  <span className="text-xs tracking-tight font-bold">Portal Hub</span>
+                  <Home className="w-4 h-4 shrink-0" />
+                  <span className="text-xs tracking-tight font-bold truncate min-w-0">Portal Hub</span>
                 </Link>
 
                 <Link 
                   to="/login" 
-                  className={`min-h-[48px] rounded-xl flex items-center justify-center gap-2 transition-all ${
+                  className={`min-h-[48px] rounded-xl flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 transition-all ${
                     location.pathname.startsWith('/login') 
                       ? 'text-white bg-brand-teal font-black shadow-xs' 
                       : 'text-dark-teal-950 bg-brand-mint font-extrabold'
                   }`}
                 >
-                  <LogIn className="w-4 h-4" />
-                  <span className="text-xs tracking-tight font-bold">Sign In</span>
+                  <LogIn className="w-4 h-4 shrink-0" />
+                  <span className="text-xs tracking-tight font-bold truncate min-w-0">{t('nav.signIn')}</span>
                 </Link>
               </div>
             )}
