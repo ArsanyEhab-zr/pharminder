@@ -1,5 +1,5 @@
 import React from 'react'
-import { ShieldAlert, RefreshCw, Home, Pill } from 'lucide-react'
+import { ShieldAlert, RefreshCw, Home } from 'lucide-react'
 import { getBrandLogo } from '../../utils/brandAssets'
 
 export default class ErrorBoundary extends React.Component {

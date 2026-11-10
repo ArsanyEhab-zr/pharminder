@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useTranslation } from 'react-i18next'
 import { supabase, supabaseAdmin } from '../../lib/supabase'
 import { parseClinicalIntake, serializeClinicalIntake } from '../../utils/patientMedicalNotes'
 import DynamicTagInput from '../common/DynamicTagInput'
 import GlobalDrugAutocomplete from '../common/GlobalDrugAutocomplete'
+import { upsertMedicationWithRxCui } from '../../utils/globalDrugApi'
 import {
   User,
   HeartPulse,
@@ -132,6 +134,7 @@ export default function PatientMedicalProfileForm({
   patientData,
   onProfileSaved,
 }) {
+  const { t } = useTranslation()
   const parsedIntake = useMemo(
     () => parseClinicalIntake(patientData?.family_history || ''),
     [patientData]
@@ -141,44 +144,41 @@ export default function PatientMedicalProfileForm({
   const [viewMode, setViewMode] = useState('wizard')
   const [currentStep, setCurrentStep] = useState(1)
 
-  // 1. Personal & Vitals State
-  const [fullName, setFullName] = useState(profile?.full_name || 'Jane Doe')
-  const [age, setAge] = useState(patientData?.age || 54)
+  // 1. Personal & Vitals State (Strictly isolated to current user — zero demo defaults)
+  const [fullName, setFullName] = useState(profile?.full_name || '')
+  const [age, setAge] = useState(patientData?.age ?? '')
   const [gender, setGender] = useState(patientData?.gender || 'Female')
   const [bloodType, setBloodType] = useState(parsedIntake.bloodType || 'O+')
-  const [height, setHeight] = useState(patientData?.height || 168)
-  const [weight, setWeight] = useState(patientData?.weight || 71.5)
+  const [height, setHeight] = useState(patientData?.height ?? '')
+  const [weight, setWeight] = useState(patientData?.weight ?? '')
   const [emergencyContact, setEmergencyContact] = useState(
-    parsedIntake.emergencyContact || 'Michael Doe (Spouse) • (555) 234-8910'
+    parsedIntake.emergencyContact || ''
   )
 
-  // 2. Chronic Diseases State (Dynamic Tags)
+  // 2. Chronic Diseases State (Dynamic Tags — strictly isolated per patient)
   const [chronicDiseases, setChronicDiseases] = useState(
-    patientData?.chronic_diseases?.length > 0
+    Array.isArray(patientData?.chronic_diseases)
       ? patientData.chronic_diseases
-      : ['Type 2 Diabetes', 'Hypertension']
+      : []
   )
 
-  // 3. Current Symptoms & Complaints State (Dynamic Tags + Notes)
+  // 3. Current Symptoms & Complaints State (Dynamic Tags + Notes — strictly isolated per patient)
   const [selectedSymptoms, setSelectedSymptoms] = useState(
-    parsedIntake.symptomTags.length > 0
-      ? parsedIntake.symptomTags
-      : ['Mild Morning Dizziness']
+    Array.isArray(parsedIntake.symptomTags) ? parsedIntake.symptomTags : []
   )
   const [customSymptomNotes, setCustomSymptomNotes] = useState(
-    parsedIntake.currentSymptoms || 'Mild morning dizziness when standing up quickly.'
+    parsedIntake.currentSymptoms || ''
   )
 
-  // 4. Allergies, Global Drug Search & Family History State
+  // 4. Allergies, Global Drug Search & Family History State (Strictly isolated per patient)
   const [selectedAllergies, setSelectedAllergies] = useState(
-    parsedIntake.allergyTags.length > 0 ? parsedIntake.allergyTags : ['Sulfa Drugs']
+    Array.isArray(parsedIntake.allergyTags) ? parsedIntake.allergyTags : []
   )
   const [globalSearchMode, setGlobalSearchMode] = useState('allergy') // 'allergy' | 'home_med'
   const [addingHomeMed, setAddingHomeMed] = useState(false)
   const [homeMedFeedback, setHomeMedFeedback] = useState('')
   const [familyHistory, setFamilyHistory] = useState(
-    parsedIntake.familyHistory ||
-      'Maternal history of Type 2 Diabetes; Paternal hypertension and coronary artery disease.'
+    parsedIntake.familyHistory || ''
   )
 
   // Submission State
@@ -187,27 +187,41 @@ export default function PatientMedicalProfileForm({
   const [saveError, setSaveError] = useState('')
   const [lastSavedAt, setLastSavedAt] = useState(null)
 
+  // Strict State Sync & Reset whenever user.id, profile, or patientData changes
   useEffect(() => {
-    if (profile?.full_name) {
-      setFullName(profile.full_name)
-    }
+    setFullName(profile?.full_name || '')
     if (patientData) {
-      if (patientData.age) setAge(patientData.age)
-      if (patientData.gender) setGender(patientData.gender)
-      if (patientData.height) setHeight(patientData.height)
-      if (patientData.weight) setWeight(patientData.weight)
-      if (Array.isArray(patientData.chronic_diseases)) {
-        setChronicDiseases(patientData.chronic_diseases)
-      }
+      setAge(patientData.age ?? '')
+      setGender(patientData.gender || 'Female')
+      setHeight(patientData.height ?? '')
+      setWeight(patientData.weight ?? '')
+      setChronicDiseases(
+        Array.isArray(patientData.chronic_diseases)
+          ? patientData.chronic_diseases
+          : []
+      )
       const intake = parseClinicalIntake(patientData.family_history || '')
-      if (intake.bloodType) setBloodType(intake.bloodType)
-      if (intake.emergencyContact) setEmergencyContact(intake.emergencyContact)
-      if (intake.symptomTags.length > 0) setSelectedSymptoms(intake.symptomTags)
-      if (intake.currentSymptoms) setCustomSymptomNotes(intake.currentSymptoms)
-      if (intake.allergyTags.length > 0) setSelectedAllergies(intake.allergyTags)
-      if (intake.familyHistory) setFamilyHistory(intake.familyHistory)
+      setBloodType(intake.bloodType || 'O+')
+      setEmergencyContact(intake.emergencyContact || '')
+      setSelectedSymptoms(Array.isArray(intake.symptomTags) ? intake.symptomTags : [])
+      setCustomSymptomNotes(intake.currentSymptoms || '')
+      setSelectedAllergies(Array.isArray(intake.allergyTags) ? intake.allergyTags : [])
+      setFamilyHistory(intake.familyHistory || '')
+    } else {
+      // Explicitly reset all medical fields if patient has no record yet
+      setAge('')
+      setGender('Female')
+      setHeight('')
+      setWeight('')
+      setChronicDiseases([])
+      setBloodType('O+')
+      setEmergencyContact('')
+      setSelectedSymptoms([])
+      setCustomSymptomNotes('')
+      setSelectedAllergies([])
+      setFamilyHistory('')
     }
-  }, [profile, patientData])
+  }, [user?.id, profile, patientData])
 
   // Auto-calculated BMI & clinical interpretation
   const bmiInfo = useMemo(() => {
@@ -255,30 +269,18 @@ export default function PatientMedicalProfileForm({
       setHomeMedFeedback('')
       const client = supabaseAdmin || supabase
 
-      // 1. Find or insert in public.medications
-      let medicationId = null
-      const { data: existingMed } = await client
-        .from('medications')
-        .select('id, name')
-        .ilike('name', globalMedObj.name)
-        .maybeSingle()
-
-      if (existingMed?.id) {
-        medicationId = existingMed.id
-      } else {
-        const { data: createdMed, error: createErr } = await client
-          .from('medications')
-          .insert({
-            name: globalMedObj.name,
-            description: 'Patient-reported medication via NIH RxTerms Global Formulary',
-            category: globalMedObj.category || 'Global NIH RxTerms Formulary',
-            dosage_form: globalMedObj.dosage_form || 'Oral Tablet',
-          })
-          .select()
-          .single()
-        if (createErr) throw createErr
-        medicationId = createdMed.id
-      }
+      // 1. Upsert medication with its resolved NIH RxCUI into public.medications
+      const persistedMed = await upsertMedicationWithRxCui(client, {
+        name: globalMedObj.name,
+        rxcui: globalMedObj.rxcui,
+        ingredientRxcui: globalMedObj.ingredientRxcui,
+        description:
+          globalMedObj.description ||
+          'Patient-reported medication via NIH RxTerms Global Formulary',
+        category: globalMedObj.category || 'NIH RxTerms Formulary',
+        dosage_form: globalMedObj.dosage_form || 'Oral Tablet',
+      })
+      const medicationId = persistedMed.id
 
       // 2. Insert into public.prescriptions as an active patient-reported regimen
       const todayIso = new Date().toISOString().split('T')[0]
@@ -287,7 +289,9 @@ export default function PatientMedicalProfileForm({
       const { error: rxErr } = await client.from('prescriptions').insert({
         patient_id: user.id,
         medication_id: medicationId,
-        dosage_instructions: `Patient-reported regimen (${globalMedObj.dosage_form || 'Oral'}) — Take as directed`,
+        dosage_instructions: `Patient-reported regimen (${globalMedObj.dosage_form || 'Oral'}${
+          persistedMed.rxcui ? ` • RxCUI: ${persistedMed.rxcui}` : ''
+        }) — Take as directed`,
         frequency: 'Once daily in the morning',
         start_date: todayIso,
         end_date: endThirtyIso,
@@ -297,7 +301,9 @@ export default function PatientMedicalProfileForm({
       if (rxErr) throw rxErr
 
       setHomeMedFeedback(
-        `Added "${globalMedObj.name}" to your Active Medications & synced with your Doctor!`
+        `Added "${globalMedObj.name}"${
+          persistedMed.rxcui ? ` (RxCUI: ${persistedMed.rxcui})` : ''
+        } to your Active Medications & synced with your Doctor!`
       )
       if (onProfileSaved) {
         await onProfileSaved()
@@ -323,13 +329,16 @@ export default function PatientMedicalProfileForm({
     try {
       const client = supabaseAdmin || supabase
 
-      // 1. Upsert public.profiles
-      const { error: profErr } = await client.from('profiles').upsert({
-        id: user.id,
-        full_name: fullName.trim() || 'Patient',
-        email: user.email,
-        role: 'patient',
-      })
+      // 1. Strictly update/upsert public.profiles for this exact user.id
+      const { error: profErr } = await client
+        .from('profiles')
+        .upsert({
+          id: user.id,
+          full_name: fullName.trim() || 'Patient',
+          email: user.email,
+          role: 'patient',
+        })
+        .eq('id', user.id)
 
       if (profErr) throw profErr
 
@@ -348,12 +357,11 @@ export default function PatientMedicalProfileForm({
         familyHistory,
       })
 
-      // 3. Check if row exists for user_id in patients_data and update/insert
-      const { data: existingRow } = await client
+      // 3. Check if row(s) exist for user_id in patients_data and strictly filter by user.id
+      const { data: existingRows } = await client
         .from('patients_data')
         .select('user_id')
         .eq('user_id', user.id)
-        .maybeSingle()
 
       const payload = {
         user_id: user.id,
@@ -365,14 +373,16 @@ export default function PatientMedicalProfileForm({
         family_history: serializedIntake,
       }
 
-      if (existingRow) {
+      if (Array.isArray(existingRows) && existingRows.length > 0) {
         const { error: updateErr } = await client
           .from('patients_data')
           .update(payload)
           .eq('user_id', user.id)
         if (updateErr) throw updateErr
       } else {
-        const { error: insertErr } = await client.from('patients_data').insert(payload)
+        const { error: insertErr } = await client
+          .from('patients_data')
+          .insert(payload)
         if (insertErr) throw insertErr
       }
 
@@ -429,11 +439,11 @@ export default function PatientMedicalProfileForm({
           </div>
 
           <h2 className="text-xl sm:text-2xl lg:text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight">
-            My Complete Medical Profile & Chronic Conditions
+            {t('profileForm.title')}
           </h2>
 
           <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 max-w-2xl font-medium leading-relaxed">
-            Type and add <strong>any disease, symptom, allergy, or global medication in the world</strong> using our dynamic clinical taggers below. Every update is instantly shared with your doctor.
+            {t('profileForm.subtitle')}
           </p>
         </div>
 
@@ -480,7 +490,7 @@ export default function PatientMedicalProfileForm({
         </div>
 
         {/* 4 Interactive Step Pills */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
           {ONBOARDING_STEPS.map((step) => {
             const StepIcon = step.icon
             const isActive = viewMode === 'wizard' && currentStep === step.id
@@ -578,10 +588,10 @@ export default function PatientMedicalProfileForm({
                 </div>
                 <div>
                   <h3 className="font-black text-base sm:text-lg text-slate-900 dark:text-slate-100">
-                    1. Personal & Biometric Vitals
+                    {t('profileForm.personalVitals')}
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                    Used by your pharmacist for weight-based and renal dosing calculations
+                    {t('profileForm.vitalsDesc')}
                   </p>
                 </div>
               </div>
@@ -589,7 +599,7 @@ export default function PatientMedicalProfileForm({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5 sm:col-span-2">
                   <label className="block text-xs sm:text-sm font-extrabold text-slate-700 dark:text-slate-200">
-                    Full Legal Name *
+                    {t('profileForm.fullName')}
                   </label>
                   <input
                     type="text"
@@ -602,7 +612,7 @@ export default function PatientMedicalProfileForm({
 
                 <div className="space-y-1.5">
                   <label className="block text-xs sm:text-sm font-extrabold text-slate-700 dark:text-slate-200">
-                    Age (Years)
+                    {t('profileForm.age')}
                   </label>
                   <input
                     type="number"
@@ -616,23 +626,23 @@ export default function PatientMedicalProfileForm({
 
                 <div className="space-y-1.5">
                   <label className="block text-xs sm:text-sm font-extrabold text-slate-700 dark:text-slate-200">
-                    Biological Sex / Gender
+                    {t('profileForm.gender')}
                   </label>
                   <select
                     value={gender}
                     onChange={(e) => setGender(e.target.value)}
                     className="w-full min-h-[48px] px-4 py-3 rounded-2xl text-sm sm:text-base font-bold border border-slate-200 dark:border-dark-teal-800 bg-slate-50 dark:bg-dark-teal-950 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-mint"
                   >
-                    <option value="Female">Female</option>
-                    <option value="Male">Male</option>
-                    <option value="Other">Other</option>
+                    <option value="Female">{t('profileForm.female')}</option>
+                    <option value="Male">{t('profileForm.male')}</option>
+                    <option value="Other">{t('profileForm.other')}</option>
                   </select>
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="block text-xs sm:text-sm font-extrabold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
                     <Ruler className="w-4 h-4 text-brand-mint" />
-                    <span>Height (cm)</span>
+                    <span>{t('profileForm.height')}</span>
                   </label>
                   <input
                     type="number"
@@ -646,7 +656,7 @@ export default function PatientMedicalProfileForm({
                 <div className="space-y-1.5">
                   <label className="block text-xs sm:text-sm font-extrabold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
                     <Weight className="w-4 h-4 text-brand-mint" />
-                    <span>Weight (kg)</span>
+                    <span>{t('profileForm.weight')}</span>
                   </label>
                   <input
                     type="number"
@@ -659,7 +669,7 @@ export default function PatientMedicalProfileForm({
 
                 <div className="space-y-1.5">
                   <label className="block text-xs sm:text-sm font-extrabold text-slate-700 dark:text-slate-200">
-                    Blood Type
+                    {t('profileForm.bloodType')}
                   </label>
                   <div className="grid grid-cols-4 gap-1.5">
                     {BLOOD_TYPES.map((bt) => (
@@ -682,13 +692,13 @@ export default function PatientMedicalProfileForm({
                 <div className="space-y-1.5">
                   <label className="block text-xs sm:text-sm font-extrabold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
                     <Phone className="w-3.5 h-3.5 text-brand-mint" />
-                    <span>Emergency Contact</span>
+                    <span>{t('profileForm.emergencyContact')}</span>
                   </label>
                   <input
                     type="text"
                     value={emergencyContact}
                     onChange={(e) => setEmergencyContact(e.target.value)}
-                    placeholder="Name & Phone Number"
+                    placeholder={t('profileForm.emergencyPlaceholder')}
                     className="w-full min-h-[48px] px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold border border-slate-200 dark:border-dark-teal-800 bg-slate-50 dark:bg-dark-teal-950 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-mint"
                   />
                 </div>
@@ -725,10 +735,10 @@ export default function PatientMedicalProfileForm({
                   </div>
                   <div>
                     <h3 className="font-black text-base sm:text-lg text-slate-900 dark:text-slate-100">
-                      2. Chronic Diseases & Conditions (Dynamic Tagger)
+                      {t('profileForm.chronicSection')}
                     </h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                      Type ANY disease in the world and press Enter, or tap quick-select chips below
+                      {t('profileForm.chronicDesc')}
                     </p>
                   </div>
                 </div>
@@ -745,7 +755,7 @@ export default function PatientMedicalProfileForm({
                 presets={CHRONIC_DISEASE_PRESETS}
                 globalSuggestions={GLOBAL_DISEASE_SUGGESTIONS}
                 accentColor="rose"
-                placeholder="Type any condition (e.g., Hypothyroidism, Crohn's Disease, Lupus, Glaucoma) and press Enter…"
+                placeholder={t('profileForm.chronicPlaceholder')}
               />
 
               {viewMode === 'wizard' && (
@@ -786,10 +796,10 @@ export default function PatientMedicalProfileForm({
                 </div>
                 <div>
                   <h3 className="font-black text-base sm:text-lg text-slate-900 dark:text-slate-100">
-                    3. Current Symptoms & Complaints (Dynamic Tagger)
+                    {t('profileForm.symptomsSection')}
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                    Type ANY symptom or side effect you feel and press Enter to add a clinical chip
+                    {t('profileForm.symptomsDesc')}
                   </p>
                 </div>
               </div>
@@ -802,18 +812,18 @@ export default function PatientMedicalProfileForm({
                 presets={SYMPTOM_PRESETS}
                 globalSuggestions={GLOBAL_SYMPTOM_SUGGESTIONS}
                 accentColor="amber"
-                placeholder="Type any symptom (e.g., Palpitations, Blurred Vision, Tinnitus, Ankle Swelling) and press Enter…"
+                placeholder={t('profileForm.symptomsPlaceholder')}
               />
 
               <div className="space-y-1.5">
                 <label className="block text-xs sm:text-sm font-extrabold text-slate-700 dark:text-slate-200">
-                  Additional Symptom Details or Timeline Notes:
+                  {t('profileForm.symptomsNotes')}
                 </label>
                 <textarea
                   rows={2}
                   value={customSymptomNotes}
                   onChange={(e) => setCustomSymptomNotes(e.target.value)}
-                  placeholder="Describe when your symptoms started, what makes them better or worse, or any side effects from your current medications…"
+                  placeholder={t('profileForm.symptomsNotesPlaceholder')}
                   className="w-full p-4 rounded-2xl text-xs sm:text-sm font-medium border border-slate-200 dark:border-dark-teal-800 bg-slate-50 dark:bg-dark-teal-950 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-mint leading-relaxed"
                 />
               </div>
@@ -856,10 +866,10 @@ export default function PatientMedicalProfileForm({
                 </div>
                 <div>
                   <h3 className="font-black text-base sm:text-lg text-slate-900 dark:text-slate-100">
-                    4. Drug Allergies, Global Med Search & Family History
+                    {t('profileForm.allergiesSection')}
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                    Search any global drug via NIH RxTerms or type custom allergy tags
+                    {t('profileForm.allergiesDesc')}
                   </p>
                 </div>
               </div>
@@ -869,7 +879,7 @@ export default function PatientMedicalProfileForm({
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-xs font-black text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
                     <Pill className="w-4 h-4 text-brand-mint" />
-                    <span>Search Any Global Drug (NIH RxTerms API):</span>
+                    <span>{t('profileForm.globalDrugSearchTitle')}</span>
                   </span>
                   <div className="inline-flex rounded-xl p-0.5 bg-white dark:bg-[#0d2232] border border-slate-200 dark:border-dark-teal-800 text-[11px] font-extrabold">
                     <button
@@ -881,7 +891,7 @@ export default function PatientMedicalProfileForm({
                           : 'text-slate-600 dark:text-slate-300'
                       }`}
                     >
-                      + Add as Drug Allergy
+                      {t('profileForm.addAsAllergy')}
                     </button>
                     <button
                       type="button"
@@ -892,7 +902,7 @@ export default function PatientMedicalProfileForm({
                           : 'text-slate-600 dark:text-slate-300'
                       }`}
                     >
-                      + Add to My Active Meds
+                      {t('profileForm.addToActiveMeds')}
                     </button>
                   </div>
                 </div>
@@ -904,8 +914,8 @@ export default function PatientMedicalProfileForm({
                   onSelectMedication={handlePatientSelectGlobalDrug}
                   placeholder={
                     globalSearchMode === 'allergy'
-                      ? 'Search any drug in the world to add as a Known Allergy (e.g., Amoxicillin, Ciprofloxacin)…'
-                      : 'Search any drug in the world to add to your Active Medications (e.g., Levothyroxine, Vitamin D)…'
+                      ? t('profileForm.searchAllergyPlaceholder')
+                      : t('profileForm.searchHomeMedPlaceholder')
                   }
                 />
 
@@ -926,7 +936,7 @@ export default function PatientMedicalProfileForm({
 
               {/* Dynamic Creatable Tag Input for Known Drug & Food Allergies */}
               <DynamicTagInput
-                label="Known Drug, Food & Environmental Allergies"
+                label={t('profileForm.knownAllergiesLabel')}
                 helperText="Type any allergy & press Enter"
                 tags={selectedAllergies}
                 onChangeTags={setSelectedAllergies}
@@ -934,19 +944,19 @@ export default function PatientMedicalProfileForm({
                 globalSuggestions={GLOBAL_ALLERGY_SUGGESTIONS}
                 accentColor="teal"
                 badgePrefix="⚠️ "
-                placeholder="Type any allergy (e.g., Contrast Dye, Ciprofloxacin, Bee Venom, Lactose) and press Enter…"
+                placeholder={t('profileForm.knownAllergiesPlaceholder')}
               />
 
               <div className="space-y-1.5">
                 <label className="block text-xs sm:text-sm font-extrabold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
                   <FileText className="w-4 h-4 text-brand-mint" />
-                  <span>Family Medical History & Additional Notes</span>
+                  <span>{t('profileForm.familyHistoryLabel')}</span>
                 </label>
                 <textarea
                   rows={3}
                   value={familyHistory}
                   onChange={(e) => setFamilyHistory(e.target.value)}
-                  placeholder="e.g. Maternal history of diabetes; paternal hypertension or cardiac history…"
+                  placeholder={t('profileForm.familyHistoryPlaceholder')}
                   className="w-full p-4 rounded-2xl text-xs sm:text-sm font-medium border border-slate-200 dark:border-dark-teal-800 bg-slate-50 dark:bg-dark-teal-950 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-mint leading-relaxed"
                 />
               </div>
@@ -978,10 +988,10 @@ export default function PatientMedicalProfileForm({
             </div>
             <div>
               <p className="text-xs sm:text-sm font-black text-slate-900 dark:text-slate-100">
-                Real-Time Doctor & Pharmacist Sync
+                {t('profileForm.saveBarTitle')}
               </p>
               <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                Saving updates your medical record in the Doctor Command Center (`/pharmacist`) immediately.
+                {t('profileForm.saveBarDesc')}
               </p>
             </div>
           </div>
@@ -996,12 +1006,12 @@ export default function PatientMedicalProfileForm({
             {saving ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                <span>Saving Medical Profile…</span>
+                <span>{t('profileForm.saving')}</span>
               </>
             ) : (
               <>
                 <Save className="w-5 h-5 stroke-[2.5]" />
-                <span>Save & Send Medical Form to Doctor</span>
+                <span>{t('profileForm.saveButton')}</span>
               </>
             )}
           </motion.button>

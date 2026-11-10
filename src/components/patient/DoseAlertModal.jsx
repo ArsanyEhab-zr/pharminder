@@ -24,7 +24,7 @@ export default function DoseAlertModal({
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-xl animate-fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-xl animate-fade-in"
       role="dialog"
       aria-modal="true"
       aria-labelledby="dose-alert-title"
@@ -38,31 +38,31 @@ export default function DoseAlertModal({
       >
         {/* Top Decorative Alert Bar */}
         <div 
-          className={`p-5 sm:p-6 text-white flex items-center justify-between transition-colors ${
+          className={`p-4 sm:p-6 text-white flex items-center justify-between transition-colors gap-3 ${
             isCareTeamPing
               ? 'bg-gradient-to-r from-rose-600 via-rose-700 to-amber-600'
               : 'bg-gradient-to-r from-brand-teal via-teal-700 to-brand-mint'
           }`}
         >
-          <div className="flex items-center gap-3.5">
-            <div className="relative">
+          <div className="flex items-center gap-3 sm:gap-3.5 min-w-0 flex-1">
+            <div className="relative shrink-0">
               <div 
-                className={`w-13 h-13 rounded-2xl flex items-center justify-center text-white shadow-inner ${
+                className={`w-12 h-12 sm:w-13 sm:h-13 rounded-2xl flex items-center justify-center text-white shadow-inner ${
                   isCareTeamPing ? 'bg-white/25 animate-bounce' : 'bg-white/20 animate-pulse'
                 }`}
               >
-                <BellRing className="w-6 h-6 animate-pulse" />
+                <BellRing className="w-5 h-5 sm:w-6 sm:h-6 animate-pulse" />
               </div>
-              <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-400 rounded-full border-2 border-white animate-ping" />
+              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-amber-400 rounded-full border-2 border-white animate-ping" />
             </div>
 
-            <div>
-              <span className={`text-[11px] font-black uppercase tracking-widest block ${
+            <div className="min-w-0 flex-1">
+              <span className={`text-[10px] sm:text-[11px] font-black uppercase tracking-widest block truncate ${
                 isCareTeamPing ? 'text-rose-100' : 'text-mint-200'
               }`}>
                 {isCareTeamPing ? 'Urgent Care Team Message' : 'Scheduled Reminder'}
               </span>
-              <h2 id="dose-alert-title" className="text-xl sm:text-2xl font-black tracking-tight leading-tight">
+              <h2 id="dose-alert-title" className="text-lg sm:text-2xl font-black tracking-tight leading-tight truncate">
                 {isCareTeamPing ? 'Urgent: Missed Dose Alert!' : 'Time for Your Dose!'}
               </h2>
             </div>

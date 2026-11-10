@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react'
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
+import { useTranslation } from 'react-i18next'
 import AppLayout from './components/layout/AppLayout'
 import PageWrapper from './components/layout/PageWrapper'
 import PharmacistLogin from './pages/PharmacistLogin'
@@ -10,6 +11,7 @@ import PharmacistDashboard from './pages/PharmacistDashboard'
 import PatientDashboard from './pages/PatientDashboard'
 import ProtectedRoute from './components/auth/ProtectedRoute'
 import { useAuth } from './hooks/useAuth'
+import { applyDocumentDirection } from './i18n'
 
 // Read the build-time environment variable to separate Vercel deployments
 const APP_MODE = import.meta.env.VITE_APP_MODE // 'patient' | 'pharmacist' | undefined
@@ -94,6 +96,11 @@ function SmartLoginRoute() {
 export default function App() {
   const location = useLocation()
   const { user, role } = useAuth()
+  const { i18n } = useTranslation()
+
+  useEffect(() => {
+    applyDocumentDirection(i18n.language)
+  }, [i18n.language])
 
   // =========================================================================
   // 1. DEDICATED PHARMACIST / DOCTOR DEPLOYMENT (VITE_APP_MODE === 'pharmacist')

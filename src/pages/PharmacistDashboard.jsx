@@ -1,24 +1,25 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useTranslation } from 'react-i18next'
 import PatientManagement from '../components/pharmacist/PatientManagement'
 import PrescribeMedication from '../components/pharmacist/PrescribeMedication'
 import PatientAdherenceModal from '../components/pharmacist/PatientAdherenceModal'
 import DrugInformationPanel from '../components/pharmacist/DrugInformationPanel'
+import Tooltip from '../components/common/Tooltip'
 import { useAuth } from '../hooks/useAuth'
 import { supabase, supabaseAdmin } from '../lib/supabase'
 import { 
-  Stethoscope, 
   Users, 
   FileText, 
   PlusCircle, 
   Clock, 
   Activity, 
   ShieldCheck, 
-  TrendingUp,
-  RefreshCw,
-  ClipboardList,
-  Radio,
-  BookOpen
+  TrendingUp, 
+  RefreshCw, 
+  ClipboardList, 
+  Radio, 
+  BookOpen 
 } from 'lucide-react'
 
 // Smooth count-up number animation for KPI cards
@@ -122,7 +123,8 @@ const listItemVariants = {
 }
 
 export default function PharmacistDashboard() {
-  const { user, profile } = useAuth()
+  const { t } = useTranslation()
+  const { profile } = useAuth()
   const [activeTab, setActiveTab] = useState('patients') // 'patients' | 'prescribe' | 'prescriptions'
   const [preselectedPatient, setPreselectedPatient] = useState(null)
   const [selectedPatientForAudit, setSelectedPatientForAudit] = useState(null)
@@ -256,9 +258,16 @@ export default function PharmacistDashboard() {
   }, [fetchDashboardStats, fetchAllPrescriptions])
 
   const handleSelectPatientForPrescription = (patient) => {
+    setSelectedMedicationForPdr(null)
+    setSelectedPatientForAudit(null)
     setPreselectedPatient(patient)
     setActiveTab('prescribe')
   }
+
+  // Explicitly clear any stale modal / inspection state whenever preselectedPatient.id changes
+  useEffect(() => {
+    setSelectedMedicationForPdr(null)
+  }, [preselectedPatient?.id])
 
   const handlePrescriptionSuccess = () => {
     fetchDashboardStats()
@@ -300,18 +309,18 @@ export default function PharmacistDashboard() {
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-[10px] sm:text-[11px] uppercase font-black tracking-widest px-3 py-0.5 rounded-full bg-brand-mint text-dark-teal-950 shadow-xs">
-                  Doctor & Pharmacist Portal (/pharmacist)
+                  {t('pharmacist.portalBadge')}
                 </span>
                 <span className="inline-flex items-center gap-1.5 text-[11px] text-mint-200 font-bold px-2.5 py-0.5 rounded-full bg-white/10 border border-white/15">
                   <Radio className={`w-3 h-3 text-brand-mint ${liveSyncPulse ? 'animate-ping' : 'animate-pulse'}`} />
-                  <span>Realtime Patient Sync Active</span>
+                  <span>{t('pharmacist.realtimeSyncActive')}</span>
                 </span>
               </div>
               <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black mt-1.5 text-white tracking-tight">
                 {displayDoctorName}
               </h1>
               <p className="text-xs sm:text-sm text-white/80 mt-1 font-medium">
-                Patient Medical Form Review, Drug-Disease Contraindication Screening & Adherence Audit
+                {t('pharmacist.commandCenterSubtitle')}
               </p>
             </div>
           </div>
@@ -328,7 +337,7 @@ export default function PharmacistDashboard() {
               className="px-4 py-3 rounded-2xl text-xs sm:text-sm font-bold bg-white/10 hover:bg-white/20 text-white border border-white/15 transition-all flex items-center gap-2 cursor-pointer"
             >
               <RefreshCw className={`w-4 h-4 text-brand-mint ${loadingPrescriptions ? 'animate-spin' : ''}`} />
-              <span>Sync Records</span>
+              <span>{t('pharmacist.syncRecords')}</span>
             </motion.button>
 
             <motion.button
@@ -342,7 +351,7 @@ export default function PharmacistDashboard() {
               className="px-5 py-3 rounded-2xl text-xs sm:text-sm font-extrabold bg-brand-mint text-dark-teal-950 hover:bg-mint-400 transition-all duration-200 shadow-md shadow-brand-mint/25 flex items-center gap-2 cursor-pointer"
             >
               <PlusCircle className="w-4 h-4 stroke-[2.5]" />
-              <span>Prescribe & Check Interactions</span>
+              <span>{t('pharmacist.prescribeTab')}</span>
             </motion.button>
           </div>
         </div>
@@ -353,7 +362,7 @@ export default function PharmacistDashboard() {
         variants={kpiContainerVariants}
         initial="hidden"
         animate="show"
-        className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-5"
+        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-5"
       >
         <motion.div
           variants={kpiItemVariants}
@@ -362,12 +371,12 @@ export default function PharmacistDashboard() {
           className="p-5 sm:p-6 rounded-3xl bg-white dark:bg-[#0d2232] border border-slate-200/80 dark:border-dark-teal-800/60 shadow-soft-sm flex items-center justify-between cursor-pointer"
         >
           <div>
-            <span className="text-[11px] text-slate-400 font-extrabold uppercase tracking-widest block">Patients & Forms</span>
+            <span className="text-[11px] text-slate-400 font-extrabold uppercase tracking-widest block">{t('pharmacist.totalPatients')}</span>
             <h3 className="text-2xl sm:text-3xl font-black mt-1 text-slate-900 dark:text-slate-100 font-tabular">
               <AnimatedNumber value={stats.totalPatients} />
             </h3>
             <p className="text-xs text-brand-mint font-bold mt-1 flex items-center gap-1.5">
-              <Users className="w-3.5 h-3.5" /> Medical records
+              <Users className="w-3.5 h-3.5" /> {t('pharmacist.medicalRecords')}
             </p>
           </div>
           <div className="w-12 h-12 rounded-2xl bg-mint-50 dark:bg-mint-950/80 text-brand-mint flex items-center justify-center shadow-inner">
@@ -382,12 +391,12 @@ export default function PharmacistDashboard() {
           className="p-5 sm:p-6 rounded-3xl bg-white dark:bg-[#0d2232] border border-slate-200/80 dark:border-dark-teal-800/60 shadow-soft-sm flex items-center justify-between cursor-pointer"
         >
           <div>
-            <span className="text-[11px] text-slate-400 font-extrabold uppercase tracking-widest block">Active Prescriptions</span>
+            <span className="text-[11px] text-slate-400 font-extrabold uppercase tracking-widest block">{t('pharmacist.activePrescriptions')}</span>
             <h3 className="text-2xl sm:text-3xl font-black mt-1 text-brand-teal dark:text-mint-300 font-tabular">
               <AnimatedNumber value={stats.activePrescriptions} />
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1.5 font-medium">
-              <FileText className="w-3.5 h-3.5" /> Dispensed regimens
+              <FileText className="w-3.5 h-3.5" /> {t('pharmacist.dispensedRegimens')}
             </p>
           </div>
           <div className="w-12 h-12 rounded-2xl bg-dark-teal-50 dark:bg-dark-teal-950/80 text-brand-teal dark:text-mint-300 flex items-center justify-center shadow-inner">
@@ -401,12 +410,12 @@ export default function PharmacistDashboard() {
           className="p-5 sm:p-6 rounded-3xl bg-white dark:bg-[#0d2232] border border-slate-200/80 dark:border-dark-teal-800/60 shadow-soft-sm flex items-center justify-between"
         >
           <div>
-            <span className="text-[11px] text-slate-400 font-extrabold uppercase tracking-widest block">Doses Logged</span>
+            <span className="text-[11px] text-slate-400 font-extrabold uppercase tracking-widest block">{t('pharmacist.dosesLogged')}</span>
             <h3 className="text-2xl sm:text-3xl font-black mt-1 text-slate-900 dark:text-slate-100 font-tabular">
               <AnimatedNumber value={stats.totalDosesLogged} />
             </h3>
             <p className="text-xs text-brand-mint font-bold mt-1 flex items-center gap-1.5">
-              <Activity className="w-3.5 h-3.5" /> <AnimatedNumber value={stats.complianceRate} suffix="%" /> adherence
+              <Activity className="w-3.5 h-3.5" /> <AnimatedNumber value={stats.complianceRate} suffix="%" /> {t('pharmacist.adherenceRate')}
             </p>
           </div>
           <div className="w-12 h-12 rounded-2xl bg-mint-50 dark:bg-mint-950/80 text-brand-mint flex items-center justify-center shadow-inner">
@@ -421,10 +430,13 @@ export default function PharmacistDashboard() {
           className="p-5 sm:p-6 rounded-3xl bg-white dark:bg-[#0d2232] border border-slate-200/80 dark:border-dark-teal-800/60 shadow-soft-sm flex items-center justify-between cursor-pointer"
         >
           <div>
-            <span className="text-[11px] text-slate-400 font-extrabold uppercase tracking-widest block">Safety Engine</span>
+            <span className="text-[11px] text-slate-400 font-extrabold uppercase tracking-widest flex items-center gap-1.5">
+              <span>{t('pharmacist.safetyEngine')}</span>
+              <Tooltip text={t('tooltips.rxnavEngine')} />
+            </span>
             <h3 className="text-2xl sm:text-3xl font-black mt-1 text-brand-mint">DDI + Disease</h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1.5 font-medium">
-              <ShieldCheck className="w-3.5 h-3.5 text-brand-mint" /> Dual guard active
+              <ShieldCheck className="w-3.5 h-3.5 text-brand-mint" /> {t('pharmacist.dualGuardActive')}
             </p>
           </div>
           <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 flex items-center justify-center shadow-inner">
@@ -445,7 +457,7 @@ export default function PharmacistDashboard() {
           }`}
         >
           <ClipboardList className="w-4 h-4 text-brand-mint" />
-          <span>1. Patients & Medical Forms ({stats.totalPatients})</span>
+          <span>{t('pharmacist.patientsTab')} ({stats.totalPatients})</span>
         </button>
 
         <button
@@ -458,7 +470,7 @@ export default function PharmacistDashboard() {
           }`}
         >
           <PlusCircle className="w-4 h-4 text-brand-mint" />
-          <span>2. Prescribe & Interaction Checker</span>
+          <span>{t('pharmacist.prescribeTab')}</span>
         </button>
 
         <button
@@ -471,7 +483,7 @@ export default function PharmacistDashboard() {
           }`}
         >
           <FileText className="w-4 h-4 text-brand-mint" />
-          <span>3. Dispensed Orders & Follow-Up ({allPrescriptions.length})</span>
+          <span>{t('pharmacist.ordersTab')} ({allPrescriptions.length})</span>
         </button>
       </div>
 
@@ -498,6 +510,7 @@ export default function PharmacistDashboard() {
             transition={{ duration: 0.22 }}
           >
             <PrescribeMedication 
+              key={preselectedPatient?.id || 'default-prescribe'}
               preselectedPatient={preselectedPatient}
               onPrescriptionSuccess={handlePrescriptionSuccess}
             />
@@ -565,25 +578,25 @@ export default function PharmacistDashboard() {
                     key={rx.id}
                     className="p-6 rounded-3xl bg-white dark:bg-[#0d2232] border border-slate-200/80 dark:border-dark-teal-800/60 shadow-soft-sm space-y-4 flex flex-col justify-between"
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <span className="text-[10px] font-black uppercase tracking-widest text-brand-teal dark:text-mint-300 block mb-1">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 min-w-0">
+                      <div className="min-w-0 flex-1 w-full sm:w-auto">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-brand-teal dark:text-mint-300 block mb-1 truncate">
                           Patient: {rx.patient?.full_name || 'Patient'}
                         </span>
                         <button
                           type="button"
                           onClick={() => setSelectedMedicationForPdr(rx.medication?.name)}
-                          className="font-black text-base sm:text-lg text-slate-900 dark:text-slate-100 hover:text-brand-teal dark:hover:text-mint-300 transition-colors text-left flex items-center gap-2 cursor-pointer"
+                          className="font-black text-base sm:text-lg text-slate-900 dark:text-slate-100 hover:text-brand-teal dark:hover:text-mint-300 transition-colors text-left flex items-center gap-2 cursor-pointer max-w-full"
                         >
-                          <span>{rx.medication?.name} • {rx.medication?.dosage_form}</span>
+                          <span className="truncate">{rx.medication?.name} • {rx.medication?.dosage_form}</span>
                           <BookOpen className="w-4 h-4 text-brand-mint shrink-0" />
                         </button>
-                        <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-1 font-medium leading-snug">
+                        <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-1 font-medium leading-snug break-words">
                           {rx.dosage_instructions}
                         </p>
                       </div>
 
-                      <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full bg-mint-50 dark:bg-mint-950 text-brand-mint border border-mint-200 dark:border-mint-800 shadow-xs">
+                      <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full bg-mint-50 dark:bg-mint-950 text-brand-mint border border-mint-200 dark:border-mint-800 shadow-xs shrink-0 self-start sm:self-auto">
                         {rx.status}
                       </span>
                     </div>
@@ -635,6 +648,7 @@ export default function PharmacistDashboard() {
 
       {selectedPatientForAudit && (
         <PatientAdherenceModal
+          key={selectedPatientForAudit.id}
           patient={selectedPatientForAudit}
           onClose={() => setSelectedPatientForAudit(null)}
           onPrescribeNew={(pt) => {

@@ -158,7 +158,7 @@ export default function DynamicTagInput({
           )}
 
           {/* Input Row */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             <input
               type="text"
               value={inputValue}
@@ -167,13 +167,13 @@ export default function DynamicTagInput({
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder={placeholder}
-              className="flex-1 min-h-[42px] px-3 py-1.5 rounded-xl bg-white dark:bg-[#0d2232] text-xs sm:text-sm font-semibold text-slate-900 dark:text-slate-100 placeholder:text-slate-400 border border-slate-200/70 dark:border-dark-teal-800 focus:outline-none"
+              className="flex-1 min-w-0 min-h-[42px] px-3 py-1.5 rounded-xl bg-white dark:bg-[#0d2232] text-xs sm:text-sm font-semibold text-slate-900 dark:text-slate-100 placeholder:text-slate-400 border border-slate-200/70 dark:border-dark-teal-800 focus:outline-none"
             />
             <button
               type="button"
               onClick={() => addTag(inputValue)}
               disabled={!inputValue.trim()}
-              className={`min-h-[42px] px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${theme.button}`}
+              className={`min-h-[42px] px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0 ${theme.button}`}
             >
               <Plus className="w-4 h-4" />
               <span>Add Tag</span>

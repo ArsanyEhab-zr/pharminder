@@ -85,7 +85,7 @@ export default function PatientGuidedTour({
     <AnimatePresence>
       {isOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-3 sm:p-6 bg-slate-950/65 backdrop-blur-xs"
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-3 sm:p-6 pb-[max(1rem,env(safe-area-inset-bottom,1rem))] bg-slate-950/65 backdrop-blur-xs"
           role="dialog"
           aria-modal="true"
           aria-labelledby="patient-guided-tour-title"

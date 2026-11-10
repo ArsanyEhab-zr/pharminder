@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useTranslation } from 'react-i18next'
 import { supabase, supabaseAdmin } from '../../lib/supabase'
 import { getDoseStatus, findMatchingLog } from '../../utils/doseStatus'
 import { 
@@ -32,6 +33,7 @@ const timelineItemVariants = {
 }
 
 export default function DoseScheduleTimeline({ prescriptions = [], onDoseLogged }) {
+  const { t } = useTranslation()
   const [doseLogs, setDoseLogs] = useState([])
   const [updatingDoseId, setUpdatingDoseId] = useState(null)
   const [celebratingSlotKey, setCelebratingSlotKey] = useState(null)
@@ -303,31 +305,31 @@ export default function DoseScheduleTimeline({ prescriptions = [], onDoseLogged 
             <div>
               <div className="flex flex-wrap items-center gap-2.5">
                 <h3 className="font-black text-lg sm:text-xl text-slate-900 dark:text-slate-100 tracking-tight">
-                  Today’s Medication Adherence
+                  {t('timeline.todayAdherence')}
                 </h3>
                 <span className="text-xs px-3 py-0.5 rounded-full font-black bg-mint-100 dark:bg-mint-950 text-mint-900 dark:text-mint-300 border border-mint-300 dark:border-mint-700 shadow-xs font-tabular">
-                  {adherencePercent}% Complete
+                  {adherencePercent}% {t('timeline.complete')}
                 </span>
               </div>
               <div className="flex flex-wrap items-center gap-3 text-xs sm:text-sm font-bold mt-1">
                 <span className="inline-flex items-center gap-1 text-brand-mint">
-                  <Check className="w-3.5 h-3.5 stroke-[3]" /> {takenDosesCount} Taken
+                  <Check className="w-3.5 h-3.5 stroke-[3]" /> {takenDosesCount} {t('timeline.taken')}
                 </span>
                 {missedDosesCount > 0 && (
                   <span className="inline-flex items-center gap-1 text-rose-500">
-                    <X className="w-3.5 h-3.5 stroke-[3]" /> {missedDosesCount} Missed (Overdue)
+                    <X className="w-3.5 h-3.5 stroke-[3]" /> {missedDosesCount} {t('timeline.missedOverdue')}
                   </span>
                 )}
                 <span className="inline-flex items-center gap-1 text-slate-500 dark:text-slate-400">
-                  <Clock className="w-3.5 h-3.5" /> {pendingDosesCount} Pending
+                  <Clock className="w-3.5 h-3.5" /> {pendingDosesCount} {t('timeline.pending')}
                 </span>
               </div>
             </div>
           </div>
 
-          <div className="text-left sm:text-right sm:border-l sm:pl-6 border-slate-200 dark:border-dark-teal-800/60">
+          <div className="text-left rtl:text-right sm:text-right rtl:sm:text-left sm:border-l rtl:sm:border-r rtl:sm:border-l-0 sm:pl-6 rtl:sm:pr-6 rtl:sm:pl-0 border-slate-200 dark:border-dark-teal-800/60">
             <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-widest block">
-              Daily Status
+              {t('timeline.dailyStatus')}
             </span>
             <span className="text-sm sm:text-base font-extrabold text-slate-800 dark:text-slate-200 mt-0.5 block">
               {takenDosesCount === totalDosesToday && totalDosesToday > 0 ? (
@@ -336,14 +338,14 @@ export default function DoseScheduleTimeline({ prescriptions = [], onDoseLogged 
                   animate={{ scale: 1 }}
                   className="inline-flex items-center gap-1.5 text-brand-mint"
                 >
-                  <Award className="w-5 h-5" /> 100% All Doses Taken!
+                  <Award className="w-5 h-5" /> {t('timeline.allTaken')}
                 </motion.span>
               ) : missedDosesCount > 0 ? (
                 <span className="text-rose-600 dark:text-rose-400 font-bold">
-                  {missedDosesCount} Overdue dose{missedDosesCount > 1 ? 's' : ''} detected
+                  {missedDosesCount} {t('timeline.overdueDetected')}
                 </span>
               ) : (
-                `${pendingDosesCount} dose${pendingDosesCount === 1 ? '' : 's'} scheduled for today`
+                `${pendingDosesCount} ${t('timeline.scheduledForToday')}`
               )}
             </span>
           </div>
@@ -369,27 +371,27 @@ export default function DoseScheduleTimeline({ prescriptions = [], onDoseLogged 
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-lg sm:text-xl font-black tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-2">
-              <span>Daily Dose Schedule</span>
+              <span>{t('timeline.title')}</span>
               <span className="text-xs font-bold text-brand-teal dark:text-mint-300 bg-dark-teal-50 dark:bg-dark-teal-950/80 px-2.5 py-1 rounded-xl border border-dark-teal-200/60 dark:border-dark-teal-800/60">
                 {todayFormatted}
               </span>
             </h2>
             <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium">
-              Scheduled doses are pending by default and mark as missed if 30+ minutes past due.
+              {t('timeline.scheduledPendingNotice')}
             </p>
           </div>
         </div>
 
         {todayScheduleItems.length === 0 ? (
           <div className="p-10 text-center rounded-3xl bg-white dark:bg-[#0d2232] border border-slate-200/80 dark:border-dark-teal-800/60 text-slate-500 text-xs sm:text-sm shadow-soft-sm">
-            No active doses scheduled for today.
+            {t('timeline.noActiveDoses')}
           </div>
         ) : (
           <motion.div
             variants={timelineContainerVariants}
             initial="hidden"
             animate="show"
-            className="relative pl-6 sm:pl-8 border-l-2 border-mint-300 dark:border-dark-teal-800/80 space-y-5 my-3"
+            className="relative pl-6 sm:pl-8 rtl:pl-0 rtl:pr-6 rtl:sm:pr-8 border-l-2 rtl:border-r-2 rtl:border-l-0 border-mint-300 dark:border-dark-teal-800/80 space-y-5 my-3"
           >
             {todayScheduleItems.map((item) => {
               const status = getItemStatus(item)
@@ -415,7 +417,7 @@ export default function DoseScheduleTimeline({ prescriptions = [], onDoseLogged 
                           : { scale: 1, rotate: 0 }
                     }
                     transition={{ type: 'spring', stiffness: 350, damping: 15 }}
-                    className={`absolute -left-[31px] sm:-left-[39px] top-6 w-5 h-5 rounded-full border-3 flex items-center justify-center transition-colors ${
+                    className={`absolute -left-[31px] sm:-left-[39px] rtl:left-auto rtl:-right-[31px] rtl:sm:-right-[39px] top-6 w-5 h-5 rounded-full border-3 flex items-center justify-center transition-colors ${
                       taken
                         ? 'bg-brand-mint border-white dark:border-[#071520] shadow-glow-mint'
                         : missed
@@ -448,20 +450,20 @@ export default function DoseScheduleTimeline({ prescriptions = [], onDoseLogged 
                           exit={{ opacity: 0, scale: 0.85, y: -10 }}
                           transition={{ type: 'spring', stiffness: 360, damping: 20 }}
                           className="
-                            absolute top-3 right-4 z-20 inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full
+                            absolute top-3 right-4 rtl:right-auto rtl:left-4 z-20 inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full
                             bg-gradient-to-r from-brand-mint to-emerald-400 text-dark-teal-950 text-xs font-black shadow-lg
                           "
                         >
                           <PartyPopper className="w-3.5 h-3.5" />
-                          <span>Great job! Dose synced with your Doctor ✓</span>
+                          <span>{t('timeline.goodJobSync')}</span>
                         </motion.div>
                       )}
                     </AnimatePresence>
 
-                    <div className="flex items-start gap-4">
+                    <div className="flex items-start gap-3.5 sm:gap-4 min-w-0 flex-1">
                       {/* Big readable clock pill for older demographics */}
                       <div
-                        className={`px-4 py-3 rounded-2xl flex flex-col items-center justify-center shrink-0 min-w-[92px] shadow-xs border transition-colors ${
+                        className={`px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl flex flex-col items-center justify-center shrink-0 min-w-[80px] sm:min-w-[92px] shadow-xs border transition-colors ${
                           taken
                             ? 'bg-brand-mint text-dark-teal-950 border-mint-300 font-black'
                             : missed
@@ -470,7 +472,7 @@ export default function DoseScheduleTimeline({ prescriptions = [], onDoseLogged 
                         }`}
                       >
                         <Clock className="w-4 h-4 mb-0.5 stroke-[2.5]" />
-                        <span className="font-black text-sm sm:text-base tracking-tight font-tabular">
+                        <span className="font-black text-xs sm:text-base tracking-tight font-tabular">
                           {item.timeDisplay.split(' ')[0]}
                         </span>
                         <span className="text-[10px] font-black uppercase tracking-wider">
@@ -479,32 +481,32 @@ export default function DoseScheduleTimeline({ prescriptions = [], onDoseLogged 
                       </div>
 
                       {/* Medication Info & Visual Status Badge */}
-                      <div className="space-y-1.5">
+                      <div className="space-y-1.5 min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <h4 className="font-black text-base sm:text-lg text-slate-900 dark:text-slate-100 tracking-tight">
+                          <h4 className="font-black text-base sm:text-lg text-slate-900 dark:text-slate-100 tracking-tight break-words">
                             {item.medicationName}
                           </h4>
-                          <span className="text-xs px-2.5 py-0.5 rounded-lg bg-slate-100 dark:bg-dark-teal-900/80 text-slate-600 dark:text-slate-300 font-bold border border-slate-200/60 dark:border-dark-teal-800/60">
+                          <span className="text-xs px-2.5 py-0.5 rounded-lg bg-slate-100 dark:bg-dark-teal-900/80 text-slate-600 dark:text-slate-300 font-bold border border-slate-200/60 dark:border-dark-teal-800/60 shrink-0">
                             {item.dosageForm}
                           </span>
 
                           {/* Dynamic Compliance Status Pill */}
                           {taken ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-black bg-mint-100 dark:bg-mint-900/80 text-brand-mint border border-brand-mint shadow-xs">
-                              <CheckCircle2 className="w-3.5 h-3.5" /> Taken
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-black bg-mint-100 dark:bg-mint-900/80 text-brand-mint border border-brand-mint shadow-xs shrink-0">
+                              <CheckCircle2 className="w-3.5 h-3.5" /> {t('timeline.taken')}
                             </span>
                           ) : missed ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-black bg-rose-100 dark:bg-rose-900/80 text-rose-600 dark:text-rose-300 border border-rose-300 dark:border-rose-800 shadow-xs">
-                              <XCircle className="w-3.5 h-3.5" /> Missed (Overdue)
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-black bg-rose-100 dark:bg-rose-900/80 text-rose-600 dark:text-rose-300 border border-rose-300 dark:border-rose-800 shadow-xs shrink-0">
+                              <XCircle className="w-3.5 h-3.5" /> {t('timeline.missedOverdue')}
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-slate-100 dark:bg-dark-teal-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-dark-teal-800">
-                              <Clock className="w-3.5 h-3.5" /> Pending
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-slate-100 dark:bg-dark-teal-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-dark-teal-800 shrink-0">
+                              <Clock className="w-3.5 h-3.5" /> {t('timeline.pending')}
                             </span>
                           )}
                         </div>
 
-                        <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 font-medium leading-snug">
+                        <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 font-medium leading-snug break-words">
                           {item.dosageInstructions}
                         </p>
 
@@ -515,21 +517,21 @@ export default function DoseScheduleTimeline({ prescriptions = [], onDoseLogged 
                             className="inline-flex items-center gap-1.5 text-xs text-emerald-700 dark:text-mint-300 font-extrabold pt-0.5"
                           >
                             <Sparkles className="w-3.5 h-3.5 text-brand-mint" />
-                            <span>Logged taken {takenAt ? `at ${takenAt}` : 'today'}</span>
+                            <span>{t('timeline.loggedTakenAt')} {takenAt || t('timeline.loggedTakenToday')}</span>
                           </motion.div>
                         )}
 
                         {missed && (
                           <div className="inline-flex items-center gap-1.5 text-xs text-rose-600 dark:text-rose-400 font-bold pt-0.5">
                             <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                            <span>Scheduled time passed by 30+ minutes. Please take as soon as possible.</span>
+                            <span>{t('timeline.overdueWarning')}</span>
                           </div>
                         )}
                       </div>
                     </div>
 
                     {/* Big Accessible Action Button with Popping Checkmark */}
-                    <div className="sm:shrink-0 pt-2 sm:pt-0">
+                    <div className="sm:shrink-0 pt-2 sm:pt-0 w-full sm:w-auto">
                       <motion.button
                         whileHover={{ scale: 1.03 }}
                         whileTap={{ scale: 0.93 }}
@@ -546,7 +548,7 @@ export default function DoseScheduleTimeline({ prescriptions = [], onDoseLogged 
                         }`}
                       >
                         {isUpdating ? (
-                          <span className="animate-pulse">Saving…</span>
+                          <span className="animate-pulse">{t('timeline.saving')}</span>
                         ) : taken ? (
                           <>
                             <motion.div
@@ -557,20 +559,20 @@ export default function DoseScheduleTimeline({ prescriptions = [], onDoseLogged 
                             >
                               <Check className="w-4 h-4 stroke-[3.5]" />
                             </motion.div>
-                            <span>Dose Taken ✓</span>
-                            <span className="text-[11px] opacity-75 ml-0.5 font-bold">(Undo)</span>
+                            <span>{t('timeline.doseTaken')}</span>
+                            <span className="text-[11px] opacity-75 ml-0.5 font-bold">{t('timeline.undo')}</span>
                           </>
                         ) : missed ? (
                           <>
                             <div className="w-6 h-6 rounded-full border-2 border-white flex items-center justify-center font-black text-xs">
                               !
                             </div>
-                            <span>Take Missed Dose Now</span>
+                            <span>{t('timeline.takeMissedNow')}</span>
                           </>
                         ) : (
                           <>
                             <div className="w-6 h-6 rounded-full border-2 border-dark-teal-950/60 flex items-center justify-center" />
-                            <span>Take Dose Now</span>
+                            <span>{t('timeline.takeDoseNow')}</span>
                           </>
                         )}
                       </motion.button>

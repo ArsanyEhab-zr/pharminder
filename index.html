@@ -20,17 +20,28 @@
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <title>Pharminder — Healthcare & Medication Management</title>
     <script>
       (function() {
         try {
-          var saved = localStorage.getItem('pharminder-theme');
+          var savedTheme = localStorage.getItem('pharminder-theme');
           var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-          if (saved === 'dark' || (!saved && prefersDark)) {
+          if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
             document.documentElement.classList.add('dark');
           } else {
             document.documentElement.classList.remove('dark');
+          }
+
+          var savedLang = localStorage.getItem('pharminder_language');
+          if (savedLang === 'ar') {
+            document.documentElement.lang = 'ar';
+            document.documentElement.dir = 'rtl';
+            document.documentElement.classList.add('rtl-mode');
+          } else {
+            document.documentElement.lang = 'en';
+            document.documentElement.dir = 'ltr';
+            document.documentElement.classList.remove('rtl-mode');
           }
         } catch (e) {}
       })();

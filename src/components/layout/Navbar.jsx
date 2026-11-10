@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
+import { changeAppLanguage } from '../../i18n'
 import { useTheme } from '../../hooks/useTheme'
 import { useAuth } from '../../hooks/useAuth'
 import { 
@@ -15,13 +17,15 @@ import {
   ShieldCheck,
   Download,
   Lock,
-  HeartPulse
+  HeartPulse,
+  Languages
 } from 'lucide-react'
 import { getBrandLogo } from '../../utils/brandAssets'
 
 const APP_MODE = import.meta.env.VITE_APP_MODE // 'patient' | 'pharmacist' | undefined
 
 export default function Navbar() {
+  const { t, i18n } = useTranslation()
   const { isDark, toggleTheme } = useTheme()
   const { user, profile, role, signOut } = useAuth()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -29,6 +33,11 @@ export default function Navbar() {
   const [isInstalled, setIsInstalled] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
+
+  const toggleLanguage = () => {
+    const nextLang = i18n.language === 'ar' ? 'en' : 'ar'
+    changeAppLanguage(nextLang)
+  }
 
   // Listen for PWA install prompt event
   useEffect(() => {
@@ -81,13 +90,13 @@ export default function Navbar() {
   // Dynamic subtitle based on environment mode
   const appSubtitle =
     APP_MODE === 'patient'
-      ? 'Medication Companion & Health Intake'
+      ? t('nav.brandSubtitlePatient')
       : APP_MODE === 'pharmacist'
-        ? 'Clinical Safety & Prescribing Command Center'
-        : 'Clinical Safety & Medication Companion PWA'
+        ? t('nav.brandSubtitleDoctor')
+        : t('nav.brandSubtitleDual')
 
   return (
-    <header className="sticky top-0 z-50 backdrop-blur-xl bg-white/85 dark:bg-[#071520]/85 border-b border-slate-200/80 dark:border-dark-teal-800/50 transition-colors duration-300">
+    <header className="sticky top-0 z-50 backdrop-blur-xl bg-white/85 dark:bg-[#071520]/85 border-b border-slate-200/80 dark:border-dark-teal-800/50 pt-[env(safe-area-inset-top,0px)] transition-colors duration-300">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 sm:h-20 gap-3">
           {/* Logo & Brand Identity */}
@@ -188,14 +197,28 @@ export default function Navbar() {
               {isDark ? (
                 <>
                   <Sun className="w-4 h-4 text-amber-400 transition-transform duration-300 hover:rotate-90" />
-                  <span className="hidden xl:inline font-semibold">Light</span>
+                  <span className="hidden xl:inline font-semibold">{t('nav.themeLight')}</span>
                 </>
               ) : (
                 <>
                   <Moon className="w-4 h-4 text-brand-teal transition-transform duration-300 hover:-rotate-45" />
-                  <span className="hidden xl:inline font-semibold">Dark</span>
+                  <span className="hidden xl:inline font-semibold">{t('nav.themeDark')}</span>
                 </>
               )}
+            </button>
+
+            {/* Bilingual Language Switcher (🌐 En / ع) */}
+            <button
+              type="button"
+              onClick={toggleLanguage}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-2xl text-xs font-bold border border-slate-200/80 dark:border-dark-teal-800/60 bg-white/80 dark:bg-dark-teal-950/60 text-slate-700 dark:text-slate-200 hover:border-brand-mint/40 dark:hover:border-mint-400/40 transition-all duration-200 active:scale-95 shadow-xs cursor-pointer"
+              aria-label={`Switch language to ${i18n.language === 'ar' ? 'English' : 'العربية'}`}
+              title={`Switch language to ${i18n.language === 'ar' ? 'English' : 'العربية'}`}
+            >
+              <Languages className="w-4 h-4 text-brand-mint shrink-0" />
+              <span className="font-extrabold tracking-tight">
+                {i18n.language === 'ar' ? 'English' : 'العربية'}
+              </span>
             </button>
 
             {/* User Profile / Auth State Badge */}
@@ -280,6 +303,17 @@ export default function Navbar() {
                   </span>
                 </div>
 
+                <button
+                  type="button"
+                  onClick={toggleLanguage}
+                  className="w-full py-2.5 px-4 rounded-2xl text-xs font-bold bg-slate-100 dark:bg-dark-teal-950 text-slate-800 dark:text-slate-100 flex items-center justify-center gap-2 border border-slate-200 dark:border-dark-teal-800 cursor-pointer"
+                >
+                  <Languages className="w-4 h-4 text-brand-mint" />
+                  <span>
+                    {i18n.language === 'ar' ? 'Switch to English' : 'التحويل إلى اللغة العربية'}
+                  </span>
+                </button>
+
                 {deferredPrompt && !isInstalled && (
                   <button
                     type="button"
@@ -290,7 +324,7 @@ export default function Navbar() {
                     className="w-full py-2.5 px-4 rounded-2xl text-xs font-black bg-brand-mint text-dark-teal-950 flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <Download className="w-4 h-4" />
-                    <span>Install Pharminder App</span>
+                    <span>{t('nav.installApp')}</span>
                   </button>
                 )}
 
@@ -300,7 +334,7 @@ export default function Navbar() {
                   className="w-full py-3 px-4 rounded-2xl text-xs font-extrabold bg-rose-50 text-rose-600 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800 flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <LogOut className="w-4 h-4" />
-                  <span>Sign Out</span>
+                  <span>{t('nav.signOut')}</span>
                 </button>
               </div>
             ) : (

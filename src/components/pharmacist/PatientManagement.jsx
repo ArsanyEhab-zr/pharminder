@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
+import { useTranslation } from 'react-i18next'
 import { supabase, supabaseAdmin } from '../../lib/supabase'
 import { parseClinicalIntake } from '../../utils/patientMedicalNotes'
 import PatientAdherenceModal from './PatientAdherenceModal'
@@ -71,6 +72,7 @@ const patientCardVariants = {
 }
 
 export default function PatientManagement({ onSelectPatientForPrescription }) {
+  const { t } = useTranslation()
   const [patients, setPatients] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
@@ -105,23 +107,34 @@ export default function PatientManagement({ onSelectPatientForPrescription }) {
     try {
       if (!silent) setLoading(true)
       const client = supabaseAdmin || supabase
+
+      // 1. Fetch patient profiles strictly filtered by role = 'patient'
       const { data: profilesData, error: profilesErr } = await client
         .from('profiles')
-        .select(`
-          id,
-          full_name,
-          email,
-          created_at,
-          patients_data (
-            age,
-            gender,
-            height,
-            weight,
-            chronic_diseases,
-            family_history
-          ),
-          prescriptions:prescriptions_patient_id_fkey (
+        .select('id, full_name, email, role, created_at')
+        .eq('role', 'patient')
+        .order('created_at', { ascending: false })
+
+      if (profilesErr) throw profilesErr
+      const baseProfiles = profilesData || []
+      const patientIds = baseProfiles.map((p) => p.id).filter(Boolean)
+
+      if (patientIds.length === 0) {
+        setPatients([])
+        return
+      }
+
+      // 2. Fetch patients_data and prescriptions strictly filtered by patient IDs
+      const [pDataRes, rxRes] = await Promise.all([
+        client
+          .from('patients_data')
+          .select('*')
+          .in('user_id', patientIds),
+        client
+          .from('prescriptions')
+          .select(`
             id,
+            patient_id,
             status,
             dosage_instructions,
             frequency,
@@ -129,13 +142,35 @@ export default function PatientManagement({ onSelectPatientForPrescription }) {
               name,
               category
             )
-          )
-        `)
-        .eq('role', 'patient')
-        .order('created_at', { ascending: false })
+          `)
+          .in('patient_id', patientIds),
+      ])
 
-      if (profilesErr) throw profilesErr
-      setPatients(profilesData || [])
+      const allPatientDataRows = pDataRes.data || []
+      const allPrescriptionRows = rxRes.data || []
+
+      // 3. Strictly isolate and bind records per patient.id
+      const isolatedPatients = baseProfiles.map((prof) => {
+        const matchingDataRows = allPatientDataRows.filter(
+          (d) => String(d.user_id) === String(prof.id)
+        )
+        const latestPatientData =
+          matchingDataRows.length > 0
+            ? matchingDataRows[matchingDataRows.length - 1]
+            : null
+
+        const matchingPrescriptions = allPrescriptionRows.filter(
+          (rx) => String(rx.patient_id) === String(prof.id)
+        )
+
+        return {
+          ...prof,
+          patients_data: latestPatientData,
+          prescriptions: matchingPrescriptions,
+        }
+      })
+
+      setPatients(isolatedPatients)
     } catch (err) {
       console.error('Error fetching patients:', err)
     } finally {
@@ -381,28 +416,28 @@ export default function PatientManagement({ onSelectPatientForPrescription }) {
                 className="p-5 sm:p-6 rounded-3xl bg-white dark:bg-[#0d2232] border border-slate-200/80 dark:border-dark-teal-800/60 shadow-soft-sm flex flex-col justify-between space-y-4 group"
               >
                 <div>
-                  {/* Patient Header */}
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3.5">
+                  {/* Patient Header (Mobile-First Stacking & Text Overflow Protection) */}
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 min-w-0">
+                    <div className="flex items-center gap-3.5 min-w-0 w-full sm:w-auto flex-1">
                       <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-mint-50 to-dark-teal-50 dark:from-mint-950 dark:to-dark-teal-950 text-brand-mint flex items-center justify-center shrink-0 font-black text-base shadow-inner group-hover:scale-105 transition-transform duration-200">
                         {patient.full_name?.charAt(0) || 'P'}
                       </div>
-                      <div>
-                        <h4 className="font-black text-base sm:text-lg text-slate-900 dark:text-slate-100 group-hover:text-brand-teal dark:group-hover:text-mint-300 transition-colors leading-snug">
+                      <div className="min-w-0 flex-1">
+                        <h4 className="font-black text-base sm:text-lg text-slate-900 dark:text-slate-100 group-hover:text-brand-teal dark:group-hover:text-mint-300 transition-colors leading-snug truncate">
                           {patient.full_name}
                         </h4>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-[210px] font-medium">
+                        <p className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-full font-medium" title={patient.email}>
                           {patient.email || 'No email provided'}
                         </p>
                       </div>
                     </div>
 
-                    <div className="flex flex-col items-end gap-1">
-                      <span className="text-[11px] font-bold px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-dark-teal-950/80 text-slate-600 dark:text-slate-300 border border-slate-200/60 dark:border-dark-teal-800/60">
+                    <div className="flex flex-wrap items-center sm:flex-col sm:items-end gap-1.5 shrink-0 self-start sm:self-auto">
+                      <span className="text-[11px] font-bold px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-dark-teal-950/80 text-slate-600 dark:text-slate-300 border border-slate-200/60 dark:border-dark-teal-800/60 whitespace-nowrap">
                         {pData?.gender || 'Unspecified'} {pData?.age ? `• ${pData.age} yrs` : ''}
                       </span>
                       {intake.bloodType && (
-                        <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200/60 dark:border-rose-800/60">
+                        <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200/60 dark:border-rose-800/60 whitespace-nowrap">
                           Blood: {intake.bloodType}
                         </span>
                       )}
@@ -410,30 +445,30 @@ export default function PatientManagement({ onSelectPatientForPrescription }) {
                   </div>
 
                   {/* Vitals Summary Pills */}
-                  <div className="mt-4 pt-3.5 border-t border-slate-100 dark:border-dark-teal-800/60 grid grid-cols-3 gap-2.5 text-center text-xs">
-                    <div className="p-2.5 rounded-2xl bg-slate-50/80 dark:bg-dark-teal-950/60 border border-slate-100 dark:border-dark-teal-800/40">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-center gap-1">
-                        <Ruler className="w-3 h-3" /> Height
+                  <div className="mt-4 pt-3.5 border-t border-slate-100 dark:border-dark-teal-800/60 grid grid-cols-3 gap-2 sm:gap-2.5 text-center text-xs">
+                    <div className="p-2 sm:p-2.5 rounded-2xl bg-slate-50/80 dark:bg-dark-teal-950/60 border border-slate-100 dark:border-dark-teal-800/40 min-w-0">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-center gap-1 truncate">
+                        <Ruler className="w-3 h-3 shrink-0" /> Height
                       </span>
-                      <p className="font-black text-slate-800 dark:text-slate-200 mt-1 font-tabular">
+                      <p className="font-black text-slate-800 dark:text-slate-200 mt-1 font-tabular truncate">
                         {pData?.height ? `${pData.height} cm` : '—'}
                       </p>
                     </div>
 
-                    <div className="p-2.5 rounded-2xl bg-slate-50/80 dark:bg-dark-teal-950/60 border border-slate-100 dark:border-dark-teal-800/40">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-center gap-1">
-                        <Weight className="w-3 h-3" /> Weight
+                    <div className="p-2 sm:p-2.5 rounded-2xl bg-slate-50/80 dark:bg-dark-teal-950/60 border border-slate-100 dark:border-dark-teal-800/40 min-w-0">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-center gap-1 truncate">
+                        <Weight className="w-3 h-3 shrink-0" /> Weight
                       </span>
-                      <p className="font-black text-slate-800 dark:text-slate-200 mt-1 font-tabular">
+                      <p className="font-black text-slate-800 dark:text-slate-200 mt-1 font-tabular truncate">
                         {pData?.weight ? `${pData.weight} kg` : '—'}
                       </p>
                     </div>
 
-                    <div className="p-2.5 rounded-2xl bg-slate-50/80 dark:bg-dark-teal-950/60 border border-slate-100 dark:border-dark-teal-800/40">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-center gap-1">
-                        <Activity className="w-3 h-3" /> BMI
+                    <div className="p-2 sm:p-2.5 rounded-2xl bg-slate-50/80 dark:bg-dark-teal-950/60 border border-slate-100 dark:border-dark-teal-800/40 min-w-0">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-center gap-1 truncate">
+                        <Activity className="w-3 h-3 shrink-0" /> BMI
                       </span>
-                      <p className="font-black text-brand-mint mt-1 font-tabular">
+                      <p className="font-black text-brand-mint mt-1 font-tabular truncate">
                         {bmi ? bmi : '—'}
                       </p>
                     </div>
@@ -441,15 +476,15 @@ export default function PatientManagement({ onSelectPatientForPrescription }) {
 
                   {/* Chronic Diseases Tags */}
                   {pData?.chronic_diseases && pData.chronic_diseases.length > 0 && (
-                    <div className="mt-3.5 space-y-1.5">
-                      <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
+                    <div className="mt-3.5 space-y-1.5 min-w-0">
+                      <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 block">
                         Chronic Conditions (Patient Medical Form)
                       </span>
                       <div className="flex flex-wrap gap-1.5">
                         {pData.chronic_diseases.map((disease) => (
                           <span
                             key={disease}
-                            className="text-[11px] font-bold px-2.5 py-0.5 rounded-lg bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200/60 dark:border-rose-900/50"
+                            className="text-[11px] font-bold px-2.5 py-0.5 rounded-lg bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200/60 dark:border-rose-900/50 break-words"
                           >
                             {disease}
                           </span>
@@ -460,33 +495,33 @@ export default function PatientManagement({ onSelectPatientForPrescription }) {
 
                   {/* Patient-Reported Current Symptoms & Allergies from Medical Form */}
                   {(intake.currentSymptoms || intake.allergies || intake.familyHistory) && (
-                    <div className="mt-3.5 p-3 rounded-2xl bg-slate-50/90 dark:bg-dark-teal-950/60 border border-slate-100 dark:border-dark-teal-800/60 space-y-1.5 text-xs">
+                    <div className="mt-3.5 p-3 rounded-2xl bg-slate-50/90 dark:bg-dark-teal-950/60 border border-slate-100 dark:border-dark-teal-800/60 space-y-1.5 text-xs min-w-0">
                       {intake.currentSymptoms && (
-                        <div className="flex items-start gap-1.5">
+                        <div className="flex items-start gap-1.5 min-w-0">
                           <span className="text-[10px] font-black uppercase tracking-wider text-amber-600 dark:text-amber-400 shrink-0 mt-0.5">
                             Symptoms:
                           </span>
-                          <span className="font-semibold text-slate-700 dark:text-slate-200 leading-snug">
+                          <span className="font-semibold text-slate-700 dark:text-slate-200 leading-snug break-words flex-1 min-w-0">
                             {intake.currentSymptoms}
                           </span>
                         </div>
                       )}
                       {intake.allergies && (
-                        <div className="flex items-start gap-1.5">
+                        <div className="flex items-start gap-1.5 min-w-0">
                           <span className="text-[10px] font-black uppercase tracking-wider text-rose-600 dark:text-rose-400 shrink-0 mt-0.5">
                             Allergies:
                           </span>
-                          <span className="font-bold text-rose-700 dark:text-rose-300 leading-snug">
+                          <span className="font-bold text-rose-700 dark:text-rose-300 leading-snug break-words flex-1 min-w-0">
                             ⚠️ {intake.allergies}
                           </span>
                         </div>
                       )}
                       {intake.familyHistory && (
-                        <div className="flex items-start gap-1.5">
+                        <div className="flex items-start gap-1.5 min-w-0">
                           <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 shrink-0 mt-0.5">
                             History:
                           </span>
-                          <span className="text-slate-500 dark:text-slate-400 leading-snug line-clamp-1">
+                          <span className="text-slate-500 dark:text-slate-400 leading-snug line-clamp-2 break-words flex-1 min-w-0">
                             {intake.familyHistory}
                           </span>
                         </div>
@@ -495,26 +530,26 @@ export default function PatientManagement({ onSelectPatientForPrescription }) {
                   )}
 
                   {/* Active Prescriptions Count */}
-                  <div className="mt-3.5 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                    <span className="flex items-center gap-1.5 font-medium">
-                      <FileText className="w-3.5 h-3.5 text-brand-teal dark:text-mint-300" />
+                  <div className="mt-3.5 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 min-w-0">
+                    <span className="flex items-center gap-1.5 font-medium truncate">
+                      <FileText className="w-3.5 h-3.5 text-brand-teal dark:text-mint-300 shrink-0" />
                       Active Prescriptions:
                     </span>
-                    <span className="font-extrabold text-slate-900 dark:text-slate-100">
+                    <span className="font-extrabold text-slate-900 dark:text-slate-100 shrink-0 font-tabular">
                       {activePrescriptions.length} {activePrescriptions.length === 1 ? 'medication' : 'medications'}
                     </span>
                   </div>
                 </div>
 
                 {/* Card Actions: Adherence Audit & Prescribe */}
-                <div className="pt-3.5 border-t border-slate-100 dark:border-dark-teal-800/60 flex items-center justify-between gap-2.5">
+                <div className="pt-3.5 border-t border-slate-100 dark:border-dark-teal-800/60 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
                   <button
                     type="button"
                     onClick={() => setSelectedPatientForAdherence(patient)}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-brand-teal dark:text-mint-300 bg-dark-teal-50 hover:bg-dark-teal-100 dark:bg-dark-teal-950/70 dark:hover:bg-dark-teal-900 border border-dark-teal-200/60 dark:border-dark-teal-800 transition-all active:scale-95 cursor-pointer shadow-xs"
+                    className="min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-brand-teal dark:text-mint-300 bg-dark-teal-50 hover:bg-dark-teal-100 dark:bg-dark-teal-950/70 dark:hover:bg-dark-teal-900 border border-dark-teal-200/60 dark:border-dark-teal-800 transition-all active:scale-95 cursor-pointer shadow-xs"
                   >
-                    <Activity className="w-3.5 h-3.5 text-brand-mint" />
-                    <span>Adherence & History</span>
+                    <Activity className="w-3.5 h-3.5 text-brand-mint shrink-0" />
+                    <span>{t('pharmacist.auditAdherence')}</span>
                   </button>
 
                   <button
@@ -524,10 +559,10 @@ export default function PatientManagement({ onSelectPatientForPrescription }) {
                         onSelectPatientForPrescription(patient)
                       }
                     }}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-extrabold text-dark-teal-950 bg-brand-mint hover:bg-mint-400 shadow-md shadow-brand-mint/20 active:scale-95 transition-all cursor-pointer"
+                    className="min-h-[44px] inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-extrabold text-dark-teal-950 bg-brand-mint hover:bg-mint-400 shadow-md shadow-brand-mint/20 active:scale-95 transition-all cursor-pointer"
                   >
-                    <span>Prescribe</span>
-                    <ChevronRight className="w-3.5 h-3.5 stroke-[2.5]" />
+                    <span>{t('pharmacist.prescribeRegimen')}</span>
+                    <ChevronRight className="w-3.5 h-3.5 stroke-[2.5] shrink-0" />
                   </button>
                 </div>
               </motion.div>
@@ -538,18 +573,18 @@ export default function PatientManagement({ onSelectPatientForPrescription }) {
 
       {/* Register Patient Modal with Glassmorphism */}
       {isRegisterModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-md animate-fade-in">
-          <div className="w-full max-w-xl bg-white dark:bg-[#0d2232] rounded-3xl p-6 sm:p-8 border border-slate-200/80 dark:border-dark-teal-800/80 shadow-2xl max-h-[90vh] overflow-y-auto space-y-6 animate-scale-in">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-dark-teal-800/60 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-dark-teal-100 dark:bg-dark-teal-950 flex items-center justify-center text-brand-teal dark:text-mint-300 shadow-xs">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 bg-slate-950/75 backdrop-blur-md animate-fade-in">
+          <div className="w-full max-w-xl bg-white dark:bg-[#0d2232] rounded-3xl p-5 sm:p-8 border border-slate-200/80 dark:border-dark-teal-800/80 shadow-2xl max-h-[90vh] overflow-y-auto space-y-6 animate-scale-in">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-dark-teal-800/60 pb-4 gap-3">
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div className="w-11 h-11 rounded-2xl bg-dark-teal-100 dark:bg-dark-teal-950 flex items-center justify-center text-brand-teal dark:text-mint-300 shadow-xs shrink-0">
                   <UserPlus className="w-5 h-5" />
                 </div>
-                <div>
-                  <h3 className="font-black text-lg sm:text-xl text-slate-900 dark:text-slate-100 tracking-tight">
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-black text-lg sm:text-xl text-slate-900 dark:text-slate-100 tracking-tight truncate">
                     Register New Clinical Patient
                   </h3>
-                  <p className="text-xs text-slate-500 font-medium">
+                  <p className="text-xs text-slate-500 font-medium truncate">
                     Creates user profile and clinical health records
                   </p>
                 </div>
@@ -714,7 +749,7 @@ export default function PatientManagement({ onSelectPatientForPrescription }) {
                       }
                     }}
                     placeholder="Add other disease (press enter)…"
-                    className="flex-1 px-3.5 py-2 rounded-2xl text-xs border border-slate-200 dark:border-dark-teal-800 bg-slate-50 dark:bg-dark-teal-950 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-mint"
+                    className="flex-1 min-w-0 px-3.5 py-2 rounded-2xl text-xs border border-slate-200 dark:border-dark-teal-800 bg-slate-50 dark:bg-dark-teal-950 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-mint"
                   />
                   <button
                     type="button"
@@ -777,6 +812,7 @@ export default function PatientManagement({ onSelectPatientForPrescription }) {
       {/* Patient Adherence Audit & Dose History Modal */}
       {selectedPatientForAdherence && (
         <PatientAdherenceModal
+          key={selectedPatientForAdherence.id}
           patient={selectedPatientForAdherence}
           onClose={() => setSelectedPatientForAdherence(null)}
           onPrescribeNew={(pt) => {

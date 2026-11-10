@@ -1,30 +1,34 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { searchGlobalMedications } from '../../utils/globalDrugApi'
-import { KNOWN_LOCAL_DRUGS, normalizeDrugKey } from '../../utils/interactionChecker'
+import {
+  searchGlobalMedications,
+  resolveDrugRxCui,
+  extractRxCui,
+} from '../../utils/globalDrugApi'
 import {
   Search,
   Pill,
   Globe,
   Loader2,
-  CheckCircle2,
   Plus,
   Sparkles,
   X,
+  Hash,
+  AlertCircle,
 } from 'lucide-react'
 
 /**
  * Reusable Async Global Medication Autocomplete
- * Powered by the live NIH NLM RxTerms API (`https://clinicaltables.nlm.nih.gov/api/rxterms/v3/search?terms=`)
+ * Exclusively powered by the live NIH NLM RxTerms API:
+ * https://clinicaltables.nlm.nih.gov/api/rxterms/v3/search?terms=
  *
- * Used in:
- * - Pharmacist Portal (`PrescribeMedication.jsx`) to search & prescribe ANY drug in the world
- * - Patient Portal (`PatientMedicalProfileForm.jsx`) to search & add ANY global medication or drug allergy
+ * Fetches real Concept Unique Identifiers (RxCUI) alongside drug names and strengths.
  */
 export default function GlobalDrugAutocomplete({
   onSelectMedication,
   selectedMedicationName = '',
-  placeholder = 'Search any medication in the world (e.g., Ozempic, Apixaban, Vancomycin, Levothyroxine)…',
+  selectedMedicationRxcui = '',
+  placeholder = 'Search any medication via live NIH RxTerms (e.g., Warfarin, Aspirin, Apixaban, Metformin)…',
   label = 'Global Medication Search (NIH RxTerms API)',
   compact = false,
   clearOnSelect = false,
@@ -32,6 +36,7 @@ export default function GlobalDrugAutocomplete({
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
+  const [apiError, setApiError] = useState('')
   const [isOpen, setIsOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(0)
   const containerRef = useRef(null)
@@ -50,23 +55,36 @@ export default function GlobalDrugAutocomplete({
   // Debounced live fetch from NIH RxTerms API
   useEffect(() => {
     let isCancelled = false
+    const trimmed = query.trim()
+
+    if (trimmed.length < 2) {
+      setResults([])
+      setLoading(false)
+      setApiError('')
+      return
+    }
 
     const timer = setTimeout(async () => {
       try {
         setLoading(true)
-        const items = await searchGlobalMedications(query, 10)
+        setApiError('')
+        const items = await searchGlobalMedications(trimmed, 12)
         if (!isCancelled) {
           setResults(items)
           setActiveIndex(0)
         }
       } catch (err) {
-        console.error('Error searching global medications:', err)
+        console.error('Error searching NIH RxTerms API:', err)
+        if (!isCancelled) {
+          setApiError('Unable to reach NIH RxTerms API. Check your connection.')
+          setResults([])
+        }
       } finally {
         if (!isCancelled) {
           setLoading(false)
         }
       }
-    }, 200)
+    }, 220)
 
     return () => {
       isCancelled = true
@@ -74,26 +92,46 @@ export default function GlobalDrugAutocomplete({
     }
   }, [query])
 
-  const handleChooseItem = (item, chosenStrength = null) => {
-    const baseCleanName = item.cleanName || item.name
+  const handleChooseItem = async (item, chosenStrength = null) => {
+    const baseCleanName = item.cleanName || item.baseName || item.name
     const strengthToUse =
       chosenStrength ||
       (item.strengths && item.strengths.length > 0 ? item.strengths[0] : '')
+
     const finalDisplayName = strengthToUse
       ? `${baseCleanName} (${strengthToUse})`
       : baseCleanName
 
-    const normalizedKey = normalizeDrugKey(baseCleanName)
-    const isLocalIndexed = KNOWN_LOCAL_DRUGS.has(normalizedKey)
+    // Pick the exact RxCUI for the chosen strength, or fallback to primary/ingredient RxCUI
+    let specificRxcui =
+      (chosenStrength && item.strengthToRxcuiMap?.[chosenStrength.trim()]) ||
+      item.rxcui ||
+      item.ingredientRxcui ||
+      extractRxCui(item)
+
+    let ingredientRxcui = item.ingredientRxcui || specificRxcui
+
+    if (!specificRxcui) {
+      setLoading(true)
+      try {
+        const resolved = await resolveDrugRxCui(baseCleanName)
+        specificRxcui = resolved.rxcui
+        ingredientRxcui = resolved.ingredientRxcui || resolved.rxcui
+      } finally {
+        setLoading(false)
+      }
+    }
 
     if (onSelectMedication) {
       onSelectMedication({
         ...item,
         name: finalDisplayName,
         cleanName: baseCleanName,
+        rxcui: specificRxcui || null,
+        ingredientRxcui: ingredientRxcui || specificRxcui || null,
         dosage_form: strengthToUse || item.dosage_form || 'Oral Tablet / Capsule',
-        category: item.category || 'Global NIH RxTerms Formulary',
-        isGlobalApi: !isLocalIndexed,
+        category: item.category || 'NIH RxTerms Formulary',
+        isGlobalApi: true,
       })
     }
 
@@ -123,13 +161,13 @@ export default function GlobalDrugAutocomplete({
       e.preventDefault()
       if (results[activeIndex]) {
         handleChooseItem(results[activeIndex])
-      } else if (query.trim()) {
+      } else if (query.trim().length >= 2) {
         handleChooseItem({
-          id: `custom-${query.trim().toLowerCase()}`,
+          id: `rxterms-custom-${query.trim().toLowerCase()}`,
           name: query.trim(),
           cleanName: query.trim(),
           dosage_form: 'Oral Tablet / Capsule',
-          category: 'Custom Global Medication',
+          category: 'NIH RxNav Resolved Medication',
           strengths: [],
         })
       }
@@ -177,6 +215,7 @@ export default function GlobalDrugAutocomplete({
             type="button"
             onClick={() => {
               setQuery('')
+              setResults([])
               setIsOpen(true)
             }}
             className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 absolute right-3.5 top-1/2 -translate-y-1/2 cursor-pointer"
@@ -187,27 +226,27 @@ export default function GlobalDrugAutocomplete({
         ) : null}
       </div>
 
-      {/* Selected Global Medication Pill Indicator */}
+      {/* Selected Global Medication Pill Indicator with RxCUI */}
       {!clearOnSelect && selectedMedicationName && (
-        <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 rounded-xl bg-mint-50/80 dark:bg-mint-950/50 border border-mint-200/80 dark:border-mint-800/70 text-xs">
-          <div className="flex items-center gap-2 font-bold text-slate-800 dark:text-slate-100">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 rounded-xl bg-mint-50/80 dark:bg-mint-950/50 border border-mint-200/80 dark:border-mint-800/70 text-xs min-w-0">
+          <div className="flex items-center gap-2 font-bold text-slate-800 dark:text-slate-100 min-w-0 flex-1">
             <Pill className="w-3.5 h-3.5 text-brand-mint shrink-0" />
-            <span>Active Selection:</span>
-            <span className="font-black text-brand-teal dark:text-mint-300">
+            <span className="shrink-0">Active Selection:</span>
+            <span className="font-black text-brand-teal dark:text-mint-300 truncate">
               {selectedMedicationName}
             </span>
           </div>
-          <span
-            className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-md ${
-              KNOWN_LOCAL_DRUGS.has(normalizeDrugKey(selectedMedicationName))
-                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/70 dark:text-emerald-200'
-                : 'bg-sky-100 text-sky-800 dark:bg-sky-900/70 dark:text-sky-200'
-            }`}
-          >
-            {KNOWN_LOCAL_DRUGS.has(normalizeDrugKey(selectedMedicationName))
-              ? 'Local + Global Rules'
-              : 'Global NIH RxTerms'}
-          </span>
+          <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+            {selectedMedicationRxcui && (
+              <span className="inline-flex items-center gap-1 font-mono text-[10px] font-black px-2 py-0.5 rounded-md bg-brand-teal text-white">
+                <Hash className="w-2.5 h-2.5 text-brand-mint" />
+                RxCUI: {selectedMedicationRxcui}
+              </span>
+            )}
+            <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-sky-100 text-sky-800 dark:bg-sky-900/70 dark:text-sky-200">
+              NIH RxTerms Live
+            </span>
+          </div>
         </div>
       )}
 
@@ -223,17 +262,33 @@ export default function GlobalDrugAutocomplete({
           >
             <div className="px-3.5 py-2 bg-slate-50/90 dark:bg-dark-teal-950/90 flex items-center justify-between text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
               <span>
-                {query.trim()
-                  ? `NIH RxTerms Global Results for "${query}"`
-                  : 'Popular & Global Formulary Suggestions'}
+                {query.trim().length >= 2
+                  ? `Live NIH RxTerms Results for "${query.trim()}"`
+                  : 'Type 2+ characters to query Live NIH RxTerms API'}
               </span>
-              <span>Click drug or specific strength</span>
+              <span>RxCUI Indexed</span>
             </div>
 
+            {query.trim().length < 2 && (
+              <div className="p-4 text-center text-xs text-slate-500 dark:text-slate-400 font-medium">
+                Start typing any drug name (e.g., <strong>Warfarin</strong>, <strong>Aspirin</strong>, <strong>Ibuprofen</strong>, <strong>Clopidogrel</strong>, <strong>Omeprazole</strong>, <strong>Sildenafil</strong>) to fetch live NIH RxTerms formulations &amp; RxCUI codes.
+              </div>
+            )}
+
+            {apiError && (
+              <div className="p-3.5 text-xs text-rose-600 dark:text-rose-400 flex items-center gap-2 font-semibold">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{apiError}</span>
+              </div>
+            )}
+
+            {query.trim().length >= 2 && !loading && results.length === 0 && !apiError && (
+              <div className="p-3.5 text-xs text-slate-500 dark:text-slate-400 font-medium">
+                No exact NIH RxTerms match for &ldquo;{query.trim()}&rdquo;. Press Enter below to resolve RxCUI via NIH RxNav.
+              </div>
+            )}
+
             {results.map((item, idx) => {
-              const isLocal = KNOWN_LOCAL_DRUGS.has(
-                normalizeDrugKey(item.cleanName || item.name)
-              )
               const isHighlighted = idx === activeIndex
 
               return (
@@ -252,18 +307,8 @@ export default function GlobalDrugAutocomplete({
                       onClick={() => handleChooseItem(item)}
                       className="text-left flex-1 flex items-start gap-2.5 cursor-pointer"
                     >
-                      <div
-                        className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
-                          isLocal
-                            ? 'bg-mint-100 dark:bg-mint-950 text-brand-teal dark:text-mint-300'
-                            : 'bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-300'
-                        }`}
-                      >
-                        {isLocal ? (
-                          <CheckCircle2 className="w-4 h-4" />
-                        ) : (
-                          <Globe className="w-4 h-4" />
-                        )}
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-300">
+                        <Globe className="w-4 h-4" />
                       </div>
                       <div>
                         <div className="font-black text-xs sm:text-sm text-slate-900 dark:text-slate-100">
@@ -275,50 +320,55 @@ export default function GlobalDrugAutocomplete({
                       </div>
                     </button>
 
-                    <span
-                      className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md shrink-0 ${
-                        isLocal
-                          ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300'
-                          : 'bg-sky-100 dark:bg-sky-950 text-sky-800 dark:text-sky-300'
-                      }`}
-                    >
-                      {isLocal ? 'Local Rules' : 'Global API'}
-                    </span>
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      {item.rxcui && (
+                        <span className="font-mono text-[10px] font-black px-2 py-0.5 rounded-md bg-brand-teal text-white">
+                          RxCUI: {item.rxcui}
+                        </span>
+                      )}
+                      <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-sky-100 dark:bg-sky-950 text-sky-800 dark:text-sky-300">
+                        NIH RxTerms
+                      </span>
+                    </div>
                   </div>
 
-                  {/* Clickable NIH RxTerms Dosage Strengths */}
+                  {/* Clickable NIH RxTerms Dosage Strengths with specific RxCUIs */}
                   {item.strengths && item.strengths.length > 0 && (
                     <div className="flex flex-wrap items-center gap-1.5 mt-2 pl-9">
                       <span className="text-[10px] font-bold text-slate-400">
                         Strengths:
                       </span>
-                      {item.strengths.slice(0, 5).map((str) => (
-                        <button
-                          key={str}
-                          type="button"
-                          onClick={() => handleChooseItem(item, str)}
-                          className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-white dark:bg-dark-teal-950 border border-slate-200 dark:border-dark-teal-700 text-slate-700 dark:text-slate-200 hover:border-brand-mint hover:text-brand-teal dark:hover:text-mint-300 transition-colors cursor-pointer"
-                        >
-                          {str}
-                        </button>
-                      ))}
+                      {item.strengths.slice(0, 6).map((str) => {
+                        const strRxcui = item.strengthToRxcuiMap?.[str.trim()]
+                        return (
+                          <button
+                            key={str}
+                            type="button"
+                            onClick={() => handleChooseItem(item, str)}
+                            title={strRxcui ? `RxCUI: ${strRxcui}` : undefined}
+                            className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-white dark:bg-dark-teal-950 border border-slate-200 dark:border-dark-teal-700 text-slate-700 dark:text-slate-200 hover:border-brand-mint hover:text-brand-teal dark:hover:text-mint-300 transition-colors cursor-pointer"
+                          >
+                            {str}
+                          </button>
+                        )
+                      })}
                     </div>
                   )}
                 </div>
               )
             })}
 
-            {/* Always allow adding/selecting ANY custom medication string */}
+            {/* Resolve via NIH RxNav if user typed a custom drug string */}
             {query.trim().length > 1 && (
               <button
                 type="button"
                 onClick={() =>
                   handleChooseItem({
-                    id: `custom-${query.trim().toLowerCase()}`,
+                    id: `rxterms-custom-${query.trim().toLowerCase()}`,
                     name: query.trim(),
                     cleanName: query.trim(),
                     dosage_form: 'Oral Tablet / Capsule',
-                    category: 'Global Custom Medication',
+                    category: 'NIH RxNav Resolved Medication',
                     strengths: [],
                   })
                 }
@@ -326,7 +376,7 @@ export default function GlobalDrugAutocomplete({
               >
                 <span className="flex items-center gap-2">
                   <Plus className="w-4 h-4 text-sky-600" />
-                  <span>Use Global / Custom Medication: &ldquo;{query.trim()}&rdquo;</span>
+                  <span>Resolve RxCUI via NIH RxNav: &ldquo;{query.trim()}&rdquo;</span>
                 </span>
                 <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-sky-600 text-white">
                   Press Enter
@@ -339,4 +389,3 @@ export default function GlobalDrugAutocomplete({
     </div>
   )
 }
-

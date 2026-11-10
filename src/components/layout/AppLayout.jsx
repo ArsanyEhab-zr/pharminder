@@ -1,5 +1,6 @@
 import React from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import Navbar from './Navbar'
 import { useAuth } from '../../hooks/useAuth'
 import { 
@@ -10,14 +11,14 @@ import {
   ClipboardList, 
   Lock, 
   LogOut, 
-  LogIn, 
-  HeartPulse 
+  LogIn 
 } from 'lucide-react'
 import { getBrandLogo } from '../../utils/brandAssets'
 
 const APP_MODE = import.meta.env.VITE_APP_MODE // 'patient' | 'pharmacist' | undefined
 
 export default function AppLayout({ children }) {
+  const { t } = useTranslation()
   const location = useLocation()
   const navigate = useNavigate()
   const { user, role, signOut } = useAuth()
@@ -47,14 +48,14 @@ export default function AppLayout({ children }) {
       <Navbar />
 
       {/* Main Responsive Content Area */}
-      <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8 lg:py-10 pb-28 md:pb-12 transition-all">
+      <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8 lg:py-10 pb-[calc(7rem+env(safe-area-inset-bottom,0px))] md:pb-12 transition-all">
         {children}
       </main>
 
-      {/* Mobile Sticky Bottom App Bar (Role-Isolated Navigation, 48px+ touch targets) */}
+      {/* Mobile Sticky Bottom App Bar (Role-Isolated Navigation, 48px+ touch targets, PWA Safe Area Dock) */}
       <nav 
         aria-label="Mobile navigation" 
-        className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-[#071520]/95 backdrop-blur-xl border-t border-slate-200/80 dark:border-dark-teal-800/40 px-4 py-2 pb-safe shadow-soft-xl"
+        className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-[#071520]/95 backdrop-blur-xl border-t border-slate-200/80 dark:border-dark-teal-800/40 px-4 pt-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom,0.75rem))] shadow-soft-xl"
       >
         {user ? (
           <div className="grid grid-cols-2 gap-2.5 max-w-md mx-auto">
@@ -67,9 +68,9 @@ export default function AppLayout({ children }) {
                     : 'text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-dark-teal-950 font-bold'
                 }`}
               >
-                <Stethoscope className="w-4 h-4 text-brand-mint" />
-                <span className="text-xs tracking-tight">Doctor Portal</span>
-                <Lock className="w-3 h-3 opacity-75" />
+                <Stethoscope className="w-4 h-4 text-brand-mint shrink-0" />
+                <span className="text-xs tracking-tight truncate">{t('nav.doctorPortal')}</span>
+                <Lock className="w-3 h-3 opacity-75 shrink-0" />
               </Link>
             ) : (
               <Link
@@ -80,9 +81,9 @@ export default function AppLayout({ children }) {
                     : 'text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-dark-teal-950 font-bold'
                 }`}
               >
-                <ClipboardList className="w-4 h-4" />
-                <span className="text-xs tracking-tight">Patient Portal</span>
-                <Lock className="w-3 h-3 opacity-75" />
+                <ClipboardList className="w-4 h-4 shrink-0" />
+                <span className="text-xs tracking-tight truncate">{t('nav.patientPortal')}</span>
+                <Lock className="w-3 h-3 opacity-75 shrink-0" />
               </Link>
             )}
 
@@ -91,8 +92,8 @@ export default function AppLayout({ children }) {
               onClick={handleMobileSignOut}
               className="min-h-[48px] rounded-xl flex items-center justify-center gap-2 px-3 text-rose-600 dark:text-rose-400 bg-rose-50/80 dark:bg-rose-950/40 border border-rose-200/60 dark:border-rose-800/50 font-bold text-xs transition-all active:scale-95 cursor-pointer"
             >
-              <LogOut className="w-4 h-4" />
-              <span>Sign Out</span>
+              <LogOut className="w-4 h-4 shrink-0" />
+              <span className="truncate">{t('nav.signOut')}</span>
             </button>
           </div>
         ) : (

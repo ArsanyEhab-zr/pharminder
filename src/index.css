@@ -3,7 +3,7 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-sans: 'Plus Jakarta Sans', 'Cairo', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 
   /* Primary Brand Identity Tokens (Strictly Dark Teal #1B4965 & Mint Green #2EC4B6) */
   --color-brand-teal: #1B4965;
@@ -83,6 +83,10 @@
     background-color: var(--color-surface-bg-dark);
     color: #f1f5f9;
   }
+
+  [dir="rtl"] {
+    font-family: 'Cairo', 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Tahoma, sans-serif;
+  }
 }
 
 /* Custom Glassmorphism, Micro-interaction & Component Classes */
@@ -121,5 +125,9 @@
 }
 
 @utility pb-safe {
-  padding-bottom: env(safe-area-inset-bottom, 1rem);
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0.75rem));
+}
+
+@utility pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
 }

@@ -1,26 +1,26 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { supabase, supabaseAdmin } from '../../lib/supabase'
 import { broadcastMissedDosePing } from '../../utils/clinicalAlerts'
 import { getDoseStatus, generatePrescriptionSlots, findMatchingLog } from '../../utils/doseStatus'
+import Tooltip from '../common/Tooltip'
 import { 
   X, 
-  Activity, 
   CheckCircle2, 
   XCircle, 
   Clock, 
   Pill, 
   Calendar, 
   Sparkles, 
-  HeartPulse, 
   Flame, 
   Check, 
   BellRing, 
-  CheckCheck,
-  AlertTriangle
+  CheckCheck
 } from 'lucide-react'
 
 export default function PatientAdherenceModal({ patient, onClose, onPrescribeNew }) {
-  const [loading, setLoading] = useState(true)
+  const { t } = useTranslation()
+  const [_loading, setLoading] = useState(true)
   const [prescriptions, setPrescriptions] = useState([])
   const [doseLogs, setDoseLogs] = useState([])
   const [seedingDemo, setSeedingDemo] = useState(false)
@@ -30,23 +30,24 @@ export default function PatientAdherenceModal({ patient, onClose, onPrescribeNew
   const [pingSuccessMap, setPingSuccessMap] = useState({})
   const [toastMessage, setToastMessage] = useState(null)
 
-  const patientData = Array.isArray(patient?.patients_data) 
-    ? patient?.patients_data[0] 
-    : patient?.patients_data
-
-  // Fetch patient prescriptions & dose logs from Supabase
+  // Fetch patient prescriptions & dose logs from Supabase strictly isolated to patient.id
   const fetchPatientAdherenceData = useCallback(async () => {
-    if (!patient?.id) return
+    if (!patient?.id) {
+      setPrescriptions([])
+      setDoseLogs([])
+      return
+    }
 
     try {
       setLoading(true)
       const client = supabaseAdmin || supabase
 
-      // 1. Fetch all prescriptions for this patient
+      // 1. Fetch all prescriptions strictly for this patient.id
       const { data: rxData, error: rxErr } = await client
         .from('prescriptions')
         .select(`
           id,
+          patient_id,
           dosage_instructions,
           frequency,
           start_date,
@@ -64,10 +65,12 @@ export default function PatientAdherenceModal({ patient, onClose, onPrescribeNew
         .order('created_at', { ascending: false })
 
       if (rxErr) throw rxErr
-      const fetchedRxs = rxData || []
+      const fetchedRxs = (rxData || []).filter(
+        (rx) => String(rx.patient_id) === String(patient.id)
+      )
       setPrescriptions(fetchedRxs)
 
-      // 2. Fetch all dose logs for these prescriptions
+      // 2. Fetch all dose logs strictly for these prescription IDs
       if (fetchedRxs.length > 0) {
         const rxIds = fetchedRxs.map((r) => r.id)
         const { data: logsData, error: logsErr } = await client
@@ -77,18 +80,29 @@ export default function PatientAdherenceModal({ patient, onClose, onPrescribeNew
           .order('scheduled_time', { ascending: false })
 
         if (logsErr) throw logsErr
-        setDoseLogs(logsData || [])
+        const isolatedLogs = (logsData || []).filter((log) =>
+          rxIds.includes(log.prescription_id)
+        )
+        setDoseLogs(isolatedLogs)
       } else {
         setDoseLogs([])
       }
     } catch (err) {
       console.error('Error loading patient adherence history:', err)
+      setPrescriptions([])
+      setDoseLogs([])
     } finally {
       setLoading(false)
     }
-  }, [patient])
+  }, [patient?.id])
 
+  // Explicitly reset state whenever patient.id changes before fetching new adherence data
   useEffect(() => {
+    setPrescriptions([])
+    setDoseLogs([])
+    setFilterMedId('all')
+    setPingSuccessMap({})
+    setToastMessage(null)
     fetchPatientAdherenceData()
 
     // Realtime channel for live sync when patient marks a dose as taken
@@ -427,14 +441,14 @@ export default function PatientAdherenceModal({ patient, onClose, onPrescribeNew
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xl animate-fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-xl animate-fade-in"
       role="dialog"
       aria-modal="true"
       aria-labelledby="adherence-modal-title"
     >
       <div className="w-full max-w-4xl bg-white dark:bg-[#0d2232] rounded-3xl border border-slate-200/80 dark:border-dark-teal-800/80 shadow-2xl overflow-hidden max-h-[92vh] flex flex-col animate-scale-in">
         {/* 1. Modal Header */}
-        <div className="p-5 sm:p-6 bg-gradient-to-r from-dark-teal-900 to-brand-teal text-white flex items-center justify-between border-b border-white/10 shrink-0 relative">
+        <div className="p-4 sm:p-6 bg-gradient-to-r from-dark-teal-900 to-brand-teal text-white flex items-center justify-between border-b border-white/10 shrink-0 relative gap-3">
           {/* Real-time Toast Feedback Bar */}
           {toastMessage && (
             <div className="absolute top-2 left-1/2 -translate-x-1/2 z-30 animate-fade-in px-4 py-2 rounded-xl bg-dark-teal-950 text-white border border-brand-mint shadow-xl flex items-center gap-2 max-w-sm sm:max-w-md">
@@ -452,12 +466,12 @@ export default function PatientAdherenceModal({ patient, onClose, onPrescribeNew
             </div>
           )}
 
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center text-brand-mint font-black text-lg shadow-inner">
+          <div className="flex items-center gap-3 sm:gap-3.5 min-w-0 flex-1">
+            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center text-brand-mint font-black text-lg shadow-inner shrink-0">
               {patient?.full_name?.charAt(0) || 'P'}
             </div>
-            <div>
-              <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="text-[10px] font-black uppercase tracking-widest text-mint-200 bg-white/10 px-2 py-0.5 rounded-md">
                   Compliance Audit
                 </span>
@@ -465,8 +479,8 @@ export default function PatientAdherenceModal({ patient, onClose, onPrescribeNew
                   ID: {patient?.id?.slice(0, 8)}
                 </span>
               </div>
-              <h2 id="adherence-modal-title" className="text-xl sm:text-2xl font-black mt-0.5 tracking-tight">
-                {patient?.full_name}’s Adherence Score & History
+              <h2 id="adherence-modal-title" className="text-lg sm:text-2xl font-black mt-0.5 tracking-tight truncate">
+                {patient?.full_name}’s Adherence Score &amp; History
               </h2>
             </div>
           </div>
@@ -671,22 +685,25 @@ export default function PatientAdherenceModal({ patient, onClose, onPrescribeNew
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  const firstMissed = filteredLogs.find((l) => l.status === 'missed') || { id: 'summary-missed' }
-                  handlePingPatient(firstMissed)
-                }}
-                disabled={pingingDoseId === 'summary-missed'}
-                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-amber-500 hover:brightness-110 active:scale-95 text-white text-xs font-black shadow-lg shadow-rose-500/25 transition-all cursor-pointer whitespace-nowrap"
-              >
-                <BellRing className={`w-4 h-4 ${pingingDoseId === 'summary-missed' ? 'animate-spin' : 'animate-bounce'}`} />
-                <span>
-                  {pingSuccessMap['summary-missed']
-                    ? 'Alert Sent to Patient ✓'
-                    : 'Ping Patient (Send Alert)'}
-                </span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const firstMissed = filteredLogs.find((l) => l.status === 'missed') || { id: 'summary-missed' }
+                    handlePingPatient(firstMissed)
+                  }}
+                  disabled={pingingDoseId === 'summary-missed'}
+                  className="w-full sm:w-auto min-h-[44px] inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-amber-500 hover:brightness-110 active:scale-95 text-white text-xs font-black shadow-lg shadow-rose-500/25 transition-all cursor-pointer whitespace-nowrap"
+                >
+                  <BellRing className={`w-4 h-4 ${pingingDoseId === 'summary-missed' ? 'animate-spin' : 'animate-bounce'}`} />
+                  <span>
+                    {pingSuccessMap['summary-missed']
+                      ? t('pharmacist.alertSent')
+                      : t('pharmacist.pingPatient')}
+                  </span>
+                </button>
+                <Tooltip text={t('tooltips.pingPatient')} />
+              </div>
             </div>
           )}
 
@@ -853,10 +870,8 @@ export default function PatientAdherenceModal({ patient, onClose, onPrescribeNew
                                   {pingingDoseId === rowKey
                                     ? 'Pinging…'
                                     : pingSuccessMap[rowKey]
-                                      ? 'Alert Sent ✓'
-                                      : isMissed
-                                        ? 'Ping Patient (Send Alert)'
-                                        : 'Ping Patient'}
+                                      ? t('pharmacist.alertSent')
+                                      : t('pharmacist.pingPatient')}
                                 </span>
                               </button>
                             )}

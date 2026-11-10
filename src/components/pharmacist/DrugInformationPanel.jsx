@@ -52,11 +52,11 @@ export default function DrugInformationPanel({
           className="absolute -right-12 -top-12 w-56 h-56 rounded-full bg-brand-mint/15 blur-2xl pointer-events-none"
         />
 
-        <div className="flex items-start gap-3.5 relative z-10">
+        <div className="flex items-start gap-3.5 relative z-10 min-w-0 flex-1">
           <div className="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-brand-mint shrink-0 shadow-inner">
             <BookOpen className="w-6 h-6" />
           </div>
-          <div>
+          <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full bg-brand-mint text-dark-teal-950">
                 PDR.net Clinical Drug Summary
@@ -65,14 +65,14 @@ export default function DrugInformationPanel({
                 href={monograph.pdrUrl || PDR_REFERENCE_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-[11px] font-bold text-mint-200 hover:text-white underline underline-offset-2 transition-colors"
+                className="inline-flex items-center gap-1 text-[11px] font-bold text-mint-200 hover:text-white underline underline-offset-2 transition-colors truncate max-w-full"
               >
                 <span>Prescribers’ Digital Reference (pdr.net)</span>
-                <ExternalLink className="w-3 h-3" />
+                <ExternalLink className="w-3 h-3 shrink-0" />
               </a>
             </div>
 
-            <h3 className="text-lg sm:text-2xl font-black tracking-tight text-white mt-1">
+            <h3 className="text-lg sm:text-2xl font-black tracking-tight text-white mt-1 break-words">
               {medicationName}{' '}
               <span className="text-xs sm:text-sm font-bold text-mint-300/90">
                 ({monograph.genericName})
@@ -308,7 +308,7 @@ export default function DrugInformationPanel({
   if (isModal) {
     return (
       <AnimatePresence>
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-md">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/75 backdrop-blur-md">
           <motion.div
             initial={{ opacity: 0, scale: 0.95, y: 12 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}

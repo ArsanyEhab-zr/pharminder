@@ -75,22 +75,22 @@ export default function ActiveMedicationsList({ prescriptions = [], loading = fa
             >
               <div className="space-y-4">
                 {/* Header */}
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3.5">
-                    <div className="w-13 h-13 rounded-2xl bg-gradient-to-br from-mint-50 to-dark-teal-50 dark:from-mint-950 dark:to-dark-teal-950 text-brand-mint flex items-center justify-center shrink-0 shadow-inner group-hover:scale-105 transition-transform duration-200">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 min-w-0">
+                  <div className="flex items-center gap-3.5 min-w-0 flex-1 w-full sm:w-auto">
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-mint-50 to-dark-teal-50 dark:from-mint-950 dark:to-dark-teal-950 text-brand-mint flex items-center justify-center shrink-0 shadow-inner group-hover:scale-105 transition-transform duration-200">
                       <Pill className="w-6 h-6 rotate-[-20deg]" />
                     </div>
-                    <div>
-                      <h3 className="font-black text-base sm:text-lg text-slate-900 dark:text-slate-100 group-hover:text-brand-teal dark:group-hover:text-mint-300 transition-colors leading-snug">
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-black text-base sm:text-lg text-slate-900 dark:text-slate-100 group-hover:text-brand-teal dark:group-hover:text-mint-300 transition-colors leading-snug truncate">
                         {med.name || 'Prescription'}
                       </h3>
-                      <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                      <span className="text-xs font-bold text-slate-500 dark:text-slate-400 truncate block">
                         {med.dosage_form || 'Tablet / Capsule'}
                       </span>
                     </div>
                   </div>
 
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-full bg-mint-50 dark:bg-mint-950 text-brand-mint border border-mint-200 dark:border-mint-800 shadow-xs">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-full bg-mint-50 dark:bg-mint-950 text-brand-mint border border-mint-200 dark:border-mint-800 shadow-xs shrink-0 self-start sm:self-auto">
                     {med.category || 'Medication'}
                   </span>
                 </div>

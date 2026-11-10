@@ -14,8 +14,7 @@ import {
   CheckCircle2, 
   Loader2, 
   Sparkles,
-  Pill,
-  Clock
+  Pill
 } from 'lucide-react'
 
 export default function PatientLogin({ onSuccess }) {

@@ -1,10 +1,32 @@
 /**
- * Modular Clinical Safety Engine (Powered by Drugs.com & PDR.net Intelligence):
- * 1. Drugs.com Drug-to-Drug Interaction (DDI) Evaluator (`Major` [Red], `Moderate` [Yellow], `Minor` [Green])
- * 2. Drugs.com Drug-to-Disease Contraindication Evaluator (screened against Patient Medical Form)
- * 3. Drugs.com Drug-to-Allergy Cross-Reactivity Evaluator
- * 4. Drugs.com Laboratory Test Interference ("Lab Interaction") Detector (e.g., Ibuprofen false-positive drug screen)
+ * Modular Clinical Safety & Interaction Engine
+ *
+ * Powered by:
+ * 1. Drugs.com Clinical Intelligence (Primary Authority):
+ *    - Drug-to-Drug Interaction (DDI) Evaluator (`Major` [Red], `Moderate` [Yellow], `Minor` [Green])
+ *    - Drug-to-Disease Contraindication Evaluator (screened against Patient Medical Form)
+ *    - Drug-to-Allergy Cross-Reactivity Evaluator
+ *    - Laboratory Test Interference ("Lab Interaction") Detector (e.g. Ibuprofen false-positive drug screen)
+ *    Reference: https://www.drugs.com/drug_interactions.html
+ *
+ * 2. PDR.net (Prescribers' Digital Reference):
+ *    - Clinical Contraindications & Dosing Considerations (Renal / CKD adjustments)
+ *    Reference: https://www.pdr.net/
+ *
+ * 3. Supplemental Live Federal Clinical APIs (NIH RxNav & FDA OpenFDA):
+ *    - Dynamic queries for unindexed global formulary medications
  */
+
+import {
+  resolveDrugRxCui,
+  extractRxCui,
+} from './globalDrugApi.js'
+
+export const RXNAV_INTERACTION_LIST_ENDPOINT =
+  'https://rxnav.nlm.nih.gov/REST/interaction/list.json'
+export const RXNAV_RXCLASS_ENDPOINT =
+  'https://rxnav.nlm.nih.gov/REST/rxclass/class/byRxcui.json'
+export const OPENFDA_LABEL_ENDPOINT = 'https://api.fda.gov/drug/label.json'
 
 export const EXTERNAL_INTERACTION_SOURCES = {
   source1: {
@@ -12,7 +34,8 @@ export const EXTERNAL_INTERACTION_SOURCES = {
     name: 'Drugs.com Interaction & Lab Checker',
     referenceUrl: 'https://www.drugs.com/drug_interactions.html',
     endpointUrl:
-      (typeof import.meta !== 'undefined' && import.meta.env?.VITE_DRUG_INTERACTION_SOURCE_1_URL) ||
+      (typeof import.meta !== 'undefined' &&
+        import.meta.env?.VITE_DRUG_INTERACTION_SOURCE_1_URL) ||
       'https://www.drugs.com/drug_interactions.html',
     enabled: true,
     status: 'Active • Drugs.com Engine',
@@ -22,14 +45,15 @@ export const EXTERNAL_INTERACTION_SOURCES = {
     name: "PDR.net (Prescribers' Digital Reference)",
     referenceUrl: 'https://www.pdr.net/',
     endpointUrl:
-      (typeof import.meta !== 'undefined' && import.meta.env?.VITE_DRUG_INTERACTION_SOURCE_2_URL) ||
+      (typeof import.meta !== 'undefined' &&
+        import.meta.env?.VITE_DRUG_INTERACTION_SOURCE_2_URL) ||
       'https://www.pdr.net/',
     enabled: true,
     status: 'Active • PDR.net Monographs',
   },
 }
 
-// Helper to map internal color severity <-> Drugs.com Clinical Category
+// Maps internal color severity <-> Drugs.com Clinical Category
 export function mapSeverityToDrugsComCategory(severity) {
   if (severity === 'Red') return 'Major'
   if (severity === 'Yellow') return 'Moderate'
@@ -37,7 +61,7 @@ export function mapSeverityToDrugsComCategory(severity) {
   return 'Minor'
 }
 
-// Local mock formulary drugs that have full DDI, Disease, Allergy, and Lab rule coverage
+// Local formulary drugs with full DDI, Disease, Allergy, and Lab rule coverage
 export const KNOWN_LOCAL_DRUGS = new Set([
   'amoxicillin',
   'metformin',
@@ -51,24 +75,203 @@ export const KNOWN_LOCAL_DRUGS = new Set([
   'sertraline',
 ])
 
-const BRAND_TO_GENERIC_MAP = {
+// Brand name & trade synonym to generic active ingredient dictionary
+export const BRAND_TO_GENERIC_MAP = {
   advil: 'ibuprofen',
   motrin: 'ibuprofen',
   brufen: 'ibuprofen',
-  glucophage: 'metformin',
-  fortamet: 'metformin',
-  lipitor: 'atorvastatin',
-  zestril: 'lisinopril',
-  prinivil: 'lisinopril',
-  coumadin: 'warfarin',
-  jantoven: 'warfarin',
+  nuprin: 'ibuprofen',
+  plavix: 'clopidogrel',
   prilosec: 'omeprazole',
   losec: 'omeprazole',
-  amoxil: 'amoxicillin',
-  plavix: 'clopidogrel',
-  zoloft: 'sertraline',
+  omepral: 'omeprazole',
+  nexium: 'esomeprazole',
+  protonix: 'pantoprazole',
+  prevacid: 'lansoprazole',
+  coumadin: 'warfarin',
+  jantoven: 'warfarin',
   bayer: 'aspirin',
   ecotrin: 'aspirin',
+  bufferin: 'aspirin',
+  ascriptin: 'aspirin',
+  glucophage: 'metformin',
+  fortamet: 'metformin',
+  glumetza: 'metformin',
+  riomet: 'metformin',
+  lipitor: 'atorvastatin',
+  torvast: 'atorvastatin',
+  zoloft: 'sertraline',
+  lustral: 'sertraline',
+  zestril: 'lisinopril',
+  prinivil: 'lisinopril',
+  amoxil: 'amoxicillin',
+  augmentin: 'amoxicillin',
+  moxatag: 'amoxicillin',
+  trimox: 'amoxicillin',
+  tylenol: 'acetaminophen',
+  panadol: 'acetaminophen',
+  paracetamol: 'acetaminophen',
+  eliquis: 'apixaban',
+  xarelto: 'rivaroxaban',
+  pradaxa: 'dabigatran',
+  norvasc: 'amlodipine',
+  lasix: 'furosemide',
+  cozaar: 'losartan',
+  crestor: 'rosuvastatin',
+  prozac: 'fluoxetine',
+  lexapro: 'escitalopram',
+  voltaren: 'diclofenac',
+  cataflam: 'diclofenac',
+  celebrex: 'celecoxib',
+  aleve: 'naproxen',
+  naprosyn: 'naproxen',
+  diovan: 'valsartan',
+  tenormin: 'atenolol',
+  lopressor: 'metoprolol',
+  toprol: 'metoprolol',
+  zithromax: 'azithromycin',
+  cipro: 'ciprofloxacin',
+  levaquin: 'levofloxacin',
+  flagyl: 'metronidazole',
+}
+
+// Common chemical salt modifiers and dosage form tokens to exclude during tokenization
+export const SALT_MODIFIERS = new Set([
+  'sodium',
+  'potassium',
+  'calcium',
+  'magnesium',
+  'succinate',
+  'tartrate',
+  'maleate',
+  'hydrochloride',
+  'hcl',
+  'bisulfate',
+  'trihydrate',
+  'dihydrate',
+  'monohydrate',
+  'mesylate',
+  'fumarate',
+  'citrate',
+  'acetate',
+  'gluconate',
+  'nitrate',
+  'sulfate',
+  'phosphate',
+  'besylate',
+  'valerate',
+  'dipropionate',
+  'er',
+  'xr',
+  'dr',
+  'cr',
+  'sr',
+])
+
+/**
+ * Robust drug key normalizer:
+ * Handles:
+ * - Complex NIH RxTerms strings: "Ibuprofen (200 MG Oral Tablet)" -> "ibuprofen"
+ * - Salt formulations: "Warfarin Sodium (5 MG Oral Tablet)" -> "warfarin"
+ * - Brand names: "Plavix (75 MG Oral Tablet)" -> "clopidogrel", "Prilosec" -> "omeprazole"
+ * - Medication objects: { cleanName: "...", name: "..." }
+ */
+export const normalizeDrugKey = (medInput) => {
+  if (!medInput) return ''
+  let raw = ''
+  if (typeof medInput === 'object') {
+    raw =
+      medInput.cleanName ||
+      medInput.baseName ||
+      medInput.name ||
+      medInput.medication?.name ||
+      ''
+  } else {
+    raw = String(medInput)
+  }
+
+  if (!raw) return ''
+
+  // 1. Strip [RxCUI: 12345] tags
+  let cleaned = raw.replace(/\[RxCUI:\s*\d+\]/gi, ' ')
+
+  // 2. Strip contents of parentheses and brackets: "(200 MG Oral Tablet)" -> ""
+  cleaned = cleaned.replace(/\([^)]*\)/g, ' ').replace(/\[[^\]]*\]/g, ' ')
+
+  // 3. Strip dosage forms, strengths, numbers and units
+  cleaned = cleaned.replace(
+    /\b\d+(\.\d+)?\s*(mg|mcg|g|ml|iu|meq|%|tab|cap|tablet|tablets|capsule|capsules|oral|pill|pills|solution|suspension|delayed|release|extended|film|coated)\b/gi,
+    ' '
+  )
+
+  // 4. Strip punctuation and non-alpha characters
+  cleaned = cleaned.replace(/[^a-zA-Z\s-]/g, ' ').toLowerCase().trim()
+
+  const words = cleaned
+    .split(/\s+/)
+    .map((w) => w.trim())
+    .filter((w) => w.length > 0 && !SALT_MODIFIERS.has(w))
+
+  if (words.length === 0) return ''
+
+  // A. Check if any word matches BRAND_TO_GENERIC_MAP directly
+  for (const w of words) {
+    if (BRAND_TO_GENERIC_MAP[w]) {
+      return BRAND_TO_GENERIC_MAP[w]
+    }
+  }
+
+  // B. Check if any word matches a known local drug
+  for (const w of words) {
+    if (KNOWN_LOCAL_DRUGS.has(w)) {
+      return w
+    }
+  }
+
+  // C. Fallback to the first significant word (length >= 3)
+  for (const w of words) {
+    if (w.length >= 3) {
+      return w
+    }
+  }
+
+  return words[0] || ''
+}
+
+/**
+ * Extracts a Set of all potential matching tokens for a drug (generic, brand, base words)
+ */
+export function extractAllDrugTokens(medInput) {
+  const tokens = new Set()
+  const primary = normalizeDrugKey(medInput)
+  if (primary) tokens.add(primary)
+
+  let raw = ''
+  if (typeof medInput === 'object') {
+    raw = `${medInput.cleanName || ''} ${medInput.baseName || ''} ${
+      medInput.name || ''
+    } ${medInput.medication?.name || ''}`
+  } else {
+    raw = String(medInput || '')
+  }
+
+  const cleaned = raw
+    .replace(/\[RxCUI:\s*\d+\]/gi, ' ')
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/[^a-zA-Z\s-]/g, ' ')
+    .toLowerCase()
+    .trim()
+
+  cleaned.split(/\s+/).forEach((w) => {
+    if (w.length >= 3 && !SALT_MODIFIERS.has(w)) {
+      tokens.add(w)
+      if (BRAND_TO_GENERIC_MAP[w]) {
+        tokens.add(BRAND_TO_GENERIC_MAP[w])
+      }
+    }
+  })
+
+  return tokens
 }
 
 // 1. Canonical Drugs.com Drug-to-Drug Interaction (DDI) Dictionary (Major / Moderate / Minor)
@@ -85,7 +288,7 @@ export const DDI_RULES = [
     description:
       'Drugs.com [MAJOR]: Using Aspirin together with Warfarin significantly increases the risk of major systemic and gastrointestinal hemorrhage due to synergistic antiplatelet and anticoagulant activity.',
     clinicalAdvice:
-      'Co-administration is contraindicated without specialized hematology supervision and intensive INR monitoring.',
+      'Prescription blocked. Co-administration is contraindicated without specialized hematology supervision and intensive INR monitoring.',
   },
   {
     drugs: ['ibuprofen', 'warfarin'],
@@ -192,8 +395,7 @@ export const DDI_RULES = [
     title: 'Minor Gastric pH Absorption Shift (Clinically Compatible)',
     description:
       'Drugs.com [MINOR]: Omeprazole increases gastric pH, which slightly enhances Amoxicillin stability in the stomach. Frequently co-prescribed purposefully in H. pylori eradication regimens.',
-    clinicalAdvice:
-      'Safe to co-administer. No dosage adjustment required.',
+    clinicalAdvice: 'Safe to co-administer. No dosage adjustment required.',
   },
   {
     drugs: ['lisinopril', 'metformin'],
@@ -218,8 +420,7 @@ export const DDI_RULES = [
     title: 'Minor P-glycoprotein / CYP3A4 Overlap',
     description:
       'Drugs.com [MINOR]: Co-administration of Omeprazole and Atorvastatin produces negligible changes in systemic statin exposure.',
-    clinicalAdvice:
-      'Safe to dispense together without dose modification.',
+    clinicalAdvice: 'Safe to dispense together without dose modification.',
   },
 ]
 
@@ -239,7 +440,7 @@ export const DRUG_DISEASE_RULES = [
   },
   {
     drug: 'ibuprofen',
-    conditionKeywords: ['chronic kidney disease', 'kidney', 'renal'],
+    conditionKeywords: ['chronic kidney disease', 'kidney', 'renal', 'ckd'],
     severity: 'Red',
     drugsComCategory: 'Major',
     type: 'Drug-Disease Contraindication',
@@ -251,7 +452,7 @@ export const DRUG_DISEASE_RULES = [
   },
   {
     drug: 'ibuprofen',
-    conditionKeywords: ['heart failure'],
+    conditionKeywords: ['heart failure', 'cardiac failure'],
     severity: 'Red',
     drugsComCategory: 'Major',
     type: 'Drug-Disease Contraindication',
@@ -275,7 +476,7 @@ export const DRUG_DISEASE_RULES = [
   },
   {
     drug: 'ibuprofen',
-    conditionKeywords: ['asthma'],
+    conditionKeywords: ['asthma', 'bronchospasm'],
     severity: 'Yellow',
     drugsComCategory: 'Moderate',
     type: 'Drug-Disease Precaution',
@@ -299,7 +500,14 @@ export const DRUG_DISEASE_RULES = [
   },
   {
     drug: 'metformin',
-    conditionKeywords: ['chronic kidney disease', 'kidney', 'liver disease', 'hepatic'],
+    conditionKeywords: [
+      'chronic kidney disease',
+      'kidney',
+      'renal',
+      'ckd',
+      'liver disease',
+      'hepatic',
+    ],
     severity: 'Yellow',
     drugsComCategory: 'Moderate',
     type: 'Drug-Disease Precaution',
@@ -311,7 +519,7 @@ export const DRUG_DISEASE_RULES = [
   },
   {
     drug: 'atorvastatin',
-    conditionKeywords: ['liver disease', 'hepatic'],
+    conditionKeywords: ['liver disease', 'hepatic', 'cirrhosis'],
     severity: 'Red',
     drugsComCategory: 'Major',
     type: 'Drug-Disease Contraindication',
@@ -323,7 +531,7 @@ export const DRUG_DISEASE_RULES = [
   },
   {
     drug: 'warfarin',
-    conditionKeywords: ['peptic ulcer', 'liver disease'],
+    conditionKeywords: ['peptic ulcer', 'liver disease', 'hepatic'],
     severity: 'Red',
     drugsComCategory: 'Major',
     type: 'Drug-Disease Contraindication',
@@ -376,13 +584,13 @@ export const DRUG_ALLERGY_RULES = [
 ]
 
 // 4. Drugs.com Laboratory Test Interference ("Lab Interaction") Database
-// Detects false-positive drug screens and clinical pathology assay distortions
 export const DRUGS_COM_LAB_INTERACTIONS = {
   ibuprofen: [
     {
       drug: 'Ibuprofen',
       category: 'Moderate',
-      labTest: 'Urine Drug Screen (Cannabinoids / THC & Barbiturates Immunoassay)',
+      labTest:
+        'Urine Drug Screen (Cannabinoids / THC & Barbiturates Immunoassay)',
       effect: 'False-Positive Urine Drug Test Result',
       summary:
         'Ibuprofen and its urinary metabolites can cross-react with enzyme-multiplied immunoassay technique (EMIT) and fluorescence polarization immunoassay (FPIA) screening assays, causing a false-positive urine drug test for Marijuana (THC / Cannabinoids) or Barbiturates.',
@@ -395,7 +603,8 @@ export const DRUGS_COM_LAB_INTERACTIONS = {
     {
       drug: 'Amoxicillin',
       category: 'Moderate',
-      labTest: 'Urine Glucose Assay (Copper Reduction: Clinitest / Benedict’s)',
+      labTest:
+        'Urine Glucose Assay (Copper Reduction: Clinitest / Benedict’s)',
       effect: 'False-Positive Urine Glucose Reading',
       summary:
         'High urinary concentrations of Amoxicillin reduce copper ions in non-enzymatic urine glucose tests (Clinitest, Benedict’s, Fehling’s), producing a false-positive glycosuria reading.',
@@ -408,8 +617,10 @@ export const DRUGS_COM_LAB_INTERACTIONS = {
     {
       drug: 'Metformin',
       category: 'Moderate',
-      labTest: 'Iodinated Radiocontrast Studies, FDG-PET Scans & Serum Vitamin B12',
-      effect: 'Contrast-Induced Lactic Acidosis Risk & Intense Bowel FDG-PET Uptake',
+      labTest:
+        'Iodinated Radiocontrast Studies, FDG-PET Scans & Serum Vitamin B12',
+      effect:
+        'Contrast-Induced Lactic Acidosis Risk & Intense Bowel FDG-PET Uptake',
       summary:
         'Intravascular iodinated contrast agents can acutely decrease renal function and precipitate Metformin-Associated Lactic Acidosis (MALA). Metformin also increases colonic 18F-FDG uptake on PET/CT scans (obscuring bowel lesions) and lowers serum Vitamin B12 assays.',
       recommendation:
@@ -421,8 +632,10 @@ export const DRUGS_COM_LAB_INTERACTIONS = {
     {
       drug: 'Omeprazole',
       category: 'Moderate',
-      labTest: 'Serum Chromogranin A (CgA), H. pylori Urea Breath Test & Urine THC Immunoassay',
-      effect: 'False-Positive CgA / THC Screen & False-Negative H. pylori Assay',
+      labTest:
+        'Serum Chromogranin A (CgA), H. pylori Urea Breath Test & Urine THC Immunoassay',
+      effect:
+        'False-Positive CgA / THC Screen & False-Negative H. pylori Assay',
       summary:
         'Omeprazole-induced gastric acid suppression causes secondary hypergastrinemia and elevated Chromogranin A levels (false-positive neuroendocrine tumor workup), suppresses H. pylori density (false-negative breath/stool tests), and can rarely trigger false-positive urine cannabinoid immunoassays.',
       recommendation:
@@ -434,8 +647,10 @@ export const DRUGS_COM_LAB_INTERACTIONS = {
     {
       drug: 'Warfarin',
       category: 'Major',
-      labTest: 'Protein C, Protein S & Lupus Anticoagulant Thrombophilia Panels',
-      effect: 'False-Positive Thrombophilia & Coagulation Factor Deficiency',
+      labTest:
+        'Protein C, Protein S & Lupus Anticoagulant Thrombophilia Panels',
+      effect:
+        'False-Positive Thrombophilia & Coagulation Factor Deficiency',
       summary:
         'Warfarin inhibits Vitamin K epoxide reductase, depleting endogenous Protein C and Protein S and prolonging phospholipid-dependent clotting times—causing false-positive Lupus Anticoagulant and hereditary deficiency results.',
       recommendation:
@@ -447,7 +662,8 @@ export const DRUGS_COM_LAB_INTERACTIONS = {
     {
       drug: 'Aspirin',
       category: 'Minor',
-      labTest: 'Urine 5-HIAA (Serotonin Metabolite) & Serum Uric Acid Assays',
+      labTest:
+        'Urine 5-HIAA (Serotonin Metabolite) & Serum Uric Acid Assays',
       effect: 'Analytical Assay Interference & Biphasic Uric Acid Shift',
       summary:
         'Salicylates interfere with fluorometric and colorimetric urine 5-HIAA carcinoid tumor assays and cause false-high or false-low serum uric acid levels depending on dosage.',
@@ -460,7 +676,8 @@ export const DRUGS_COM_LAB_INTERACTIONS = {
     {
       drug: 'Lisinopril',
       category: 'Minor',
-      labTest: 'Basic Metabolic Panel (Serum Creatinine & Potassium) & Digoxin Assays',
+      labTest:
+        'Basic Metabolic Panel (Serum Creatinine & Potassium) & Digoxin Assays',
       effect: 'Expected Creatinine Elevation (+10–25%) & Hyperkalemia Shift',
       summary:
         'ACE inhibition reduces efferent glomerular arteriolar tone, causing an expected transient rise in serum creatinine (up to 30% above baseline) and mild potassium elevation due to reduced aldosterone secretion.',
@@ -473,7 +690,8 @@ export const DRUGS_COM_LAB_INTERACTIONS = {
     {
       drug: 'Atorvastatin',
       category: 'Minor',
-      labTest: 'Hepatic Transaminases (ALT / AST) & Serum Creatine Kinase (CK)',
+      labTest:
+        'Hepatic Transaminases (ALT / AST) & Serum Creatine Kinase (CK)',
       effect: 'Asymptomatic Transaminase & Creatine Kinase Elevation',
       summary:
         'HMG-CoA reductase inhibition may produce dose-dependent, transient elevations in serum ALT/AST (<3x ULN) and Creatine Kinase (CK), particularly after vigorous exercise.',
@@ -484,53 +702,356 @@ export const DRUGS_COM_LAB_INTERACTIONS = {
   ],
 }
 
-// Normalizes drug names for matching (e.g., "Amoxicillin 500mg" -> "amoxicillin", "metFORMIN (Oral Pill)" -> "metformin")
-export const normalizeDrugKey = (name) => {
-  if (!name || typeof name !== 'string') return ''
-  const cleaned = name
-    .replace(/\([^)]*\)/g, ' ')
-    .replace(/[^a-zA-Z0-9\s-]/g, ' ')
-    .trim()
-    .toLowerCase()
-  const primaryToken = cleaned.split(/\s+/)[0] || ''
-  return BRAND_TO_GENERIC_MAP[primaryToken] || primaryToken
-}
-
 /**
- * Returns Drugs.com Laboratory Test Interference alerts for a candidate medication
- * and optionally any active prescriptions.
+ * Returns Drugs.com Laboratory Test Interference alerts for candidate and active drugs
  */
-export function getLabInteractionsForDrug(candidateMedName, activePrescriptions = []) {
-  const normalizedCandidate = normalizeDrugKey(candidateMedName)
-  if (!normalizedCandidate) return []
+export function getLabInteractionsForDrug(
+  candidateMedInput,
+  activePrescriptions = []
+) {
+  const candidateTokens = extractAllDrugTokens(candidateMedInput)
+  const results = []
+  const seenTests = new Set()
 
-  const results = [...(DRUGS_COM_LAB_INTERACTIONS[normalizedCandidate] || [])]
+  candidateTokens.forEach((token) => {
+    const list = DRUGS_COM_LAB_INTERACTIONS[token] || []
+    list.forEach((item) => {
+      const key = `${item.drug}|${item.labTest}`
+      if (!seenTests.has(key)) {
+        seenTests.add(key)
+        results.push(item)
+      }
+    })
+  })
 
-  // Also include relevant lab interactions from active co-prescribed medications if not duplicate
+  // Also include active co-prescriptions' lab interactions if any
   activePrescriptions.forEach((rx) => {
-    const rxMedName = rx.medication?.name || rx.name || ''
-    const normRx = normalizeDrugKey(rxMedName)
-    if (normRx && normRx !== normalizedCandidate && DRUGS_COM_LAB_INTERACTIONS[normRx]) {
-      DRUGS_COM_LAB_INTERACTIONS[normRx].forEach((labItem) => {
-        if (!results.some((r) => r.drug === labItem.drug && r.labTest === labItem.labTest)) {
-          results.push({
-            ...labItem,
-            isFromActiveRegimen: true,
-          })
-        }
-      })
-    }
+    const rxTokens = extractAllDrugTokens(rx)
+    rxTokens.forEach((token) => {
+      if (!candidateTokens.has(token)) {
+        const list = DRUGS_COM_LAB_INTERACTIONS[token] || []
+        list.forEach((item) => {
+          const key = `${item.drug}|${item.labTest}`
+          if (!seenTests.has(key)) {
+            seenTests.add(key)
+            results.push({
+              ...item,
+              isFromActiveRegimen: true,
+            })
+          }
+        })
+      }
+    })
   })
 
   return results
 }
 
 /**
- * Adapter #1: Simulated / Live Drugs.com Interaction Fetcher (`https://www.drugs.com/drug_interactions.html`)
+ * Synchronously evaluates Drugs.com Clinical Rules:
+ * 1. Active Prescriptions (Drug-Drug Interactions: Major / Moderate / Minor)
+ * 2. Patient Chronic Diseases from Medical Form (Drug-Disease Contraindications)
+ * 3. Patient Allergies from Medical Form (Drug-Allergy Cross-Reactivity)
+ * 4. Laboratory Test Interferences ("Lab Interactions")
  */
-export async function fetchExternalInteractionSource1(candidateMedName, activeMedNames = []) {
+export function evaluateDrugsComRules(
+  candidateMedInput,
+  activePrescriptions = [],
+  patientChronicDiseases = [],
+  patientAllergies = []
+) {
+  const candidateDisplay =
+    (typeof candidateMedInput === 'object'
+      ? candidateMedInput?.cleanName || candidateMedInput?.name
+      : String(candidateMedInput || '')) || 'Selected Medication'
+
+  if (!candidateMedInput) {
+    return {
+      severity: 'Green',
+      rxNavSeverity: 'None',
+      drugsComCategory: 'Minor',
+      title: 'No Medication Selected',
+      description:
+        'Select a medication to evaluate Drugs.com Drug-Drug, Drug-Disease, and Lab Interactions.',
+      isBlocked: false,
+      requiresAcknowledgment: false,
+      interactions: [],
+      diseaseAlerts: [],
+      allergyAlerts: [],
+      labInteractions: [],
+      sourceUrl: 'https://www.drugs.com/drug_interactions.html',
+    }
+  }
+
+  const candidateKey = normalizeDrugKey(candidateMedInput)
+  const candidateTokens = extractAllDrugTokens(candidateMedInput)
+  const detectedInteractions = []
+  const diseaseAlerts = []
+  const allergyAlerts = []
+  const labInteractions = getLabInteractionsForDrug(
+    candidateMedInput,
+    activePrescriptions
+  )
+
+  // A. Check Drug-to-Allergy Contraindications
+  const normalizedAllergies = Array.isArray(patientAllergies)
+    ? patientAllergies.join(' ').toLowerCase()
+    : String(patientAllergies || '').toLowerCase()
+
+  if (normalizedAllergies) {
+    DRUG_ALLERGY_RULES.forEach((rule) => {
+      if (candidateTokens.has(rule.drug)) {
+        const matchedKeyword = rule.allergyKeywords.find((kw) =>
+          normalizedAllergies.includes(kw)
+        )
+        if (matchedKeyword) {
+          const alertObj = {
+            drugA: candidateDisplay,
+            drugB: `Allergy: ${matchedKeyword.toUpperCase()}`,
+            type: rule.type,
+            severity: rule.severity,
+            rxNavSeverity: rule.severity === 'Red' ? 'High' : 'Moderate',
+            drugsComCategory:
+              rule.drugsComCategory ||
+              mapSeverityToDrugsComCategory(rule.severity),
+            title: rule.title,
+            description: rule.description,
+            clinicalAdvice: rule.clinicalAdvice,
+            source: 'Drugs.com Interaction Checker',
+            sourceUrl: 'https://www.drugs.com/drug_interactions.html',
+          }
+          allergyAlerts.push(alertObj)
+          detectedInteractions.push(alertObj)
+        }
+      }
+    })
+
+    // Dynamic direct allergy matching
+    candidateTokens.forEach((t) => {
+      if (
+        t.length >= 3 &&
+        normalizedAllergies.includes(t) &&
+        allergyAlerts.length === 0
+      ) {
+        const dynamicAllergyAlert = {
+          drugA: candidateDisplay,
+          drugB: `Documented Allergy (${t.toUpperCase()})`,
+          type: 'Allergy Contraindication',
+          severity: 'Red',
+          rxNavSeverity: 'High',
+          drugsComCategory: 'Major',
+          title: `SEVERE ALLERGY ALERT: Documented ${candidateDisplay} Hypersensitivity`,
+          description: `Patient’s Medical Form documents a direct allergy to ${candidateDisplay}. Prescribing this agent carries a severe hypersensitivity / anaphylaxis risk.`,
+          clinicalAdvice:
+            'Prescription strictly blocked by patient allergy profile. Select an alternative therapeutic class.',
+          source: 'Drugs.com Interaction Checker',
+          sourceUrl: 'https://www.drugs.com/drug_interactions.html',
+        }
+        allergyAlerts.push(dynamicAllergyAlert)
+        detectedInteractions.push(dynamicAllergyAlert)
+      }
+    })
+  }
+
+  // B. Check Drug-to-Drug Interactions (DDI) against active prescriptions
+  activePrescriptions.forEach((rx) => {
+    const rxMedName = rx.medication?.name || rx.name || ''
+    const rxKey = normalizeDrugKey(rx)
+    const rxTokens = extractAllDrugTokens(rx)
+
+    // Skip if comparing same drug
+    if (rxKey && rxKey === candidateKey) return
+    const sharedTokens = [...candidateTokens].filter((t) => rxTokens.has(t))
+    if (sharedTokens.length > 0 && candidateTokens.size === 1) return
+
+    DDI_RULES.forEach((rule) => {
+      const [drugA, drugB] = rule.drugs
+      const matchA = candidateTokens.has(drugA) && rxTokens.has(drugB)
+      const matchB = candidateTokens.has(drugB) && rxTokens.has(drugA)
+
+      if (matchA || matchB) {
+        const isDuplicate = detectedInteractions.some(
+          (d) =>
+            d.type === 'Drug-Drug Interaction' &&
+            ((d.drugA === candidateDisplay && d.drugB === rxMedName) ||
+              (d.drugB === candidateDisplay && d.drugA === rxMedName))
+        )
+
+        if (!isDuplicate) {
+          detectedInteractions.push({
+            drugA: candidateDisplay,
+            drugB: rxMedName || drugB,
+            type: rule.type || 'Drug-Drug Interaction',
+            severity: rule.severity,
+            rxNavSeverity: rule.severity === 'Red' ? 'High' : 'Moderate',
+            drugsComCategory:
+              rule.drugsComCategory ||
+              mapSeverityToDrugsComCategory(rule.severity),
+            title: rule.title,
+            description: rule.description,
+            clinicalAdvice: rule.clinicalAdvice,
+            source: rule.source || 'Drugs.com Interaction Checker',
+            sourceUrl:
+              rule.sourceUrl || 'https://www.drugs.com/drug_interactions.html',
+          })
+        }
+      }
+    })
+  })
+
+  // C. Check Drug-to-Disease Contraindications against Patient Chronic Diseases
+  const normalizedDiseases = (patientChronicDiseases || []).map((d) =>
+    String(d).toLowerCase()
+  )
+
+  if (normalizedDiseases.length > 0) {
+    DRUG_DISEASE_RULES.forEach((rule) => {
+      if (candidateTokens.has(rule.drug)) {
+        const matchedDisease = patientChronicDiseases.find((patientDis) =>
+          rule.conditionKeywords.some((kw) =>
+            String(patientDis).toLowerCase().includes(kw)
+          )
+        )
+
+        if (matchedDisease) {
+          const diseaseAlertObj = {
+            drugA: candidateDisplay,
+            drugB: `Condition: ${matchedDisease}`,
+            type: rule.type,
+            severity: rule.severity,
+            rxNavSeverity: rule.severity === 'Red' ? 'High' : 'Moderate',
+            drugsComCategory:
+              rule.drugsComCategory ||
+              mapSeverityToDrugsComCategory(rule.severity),
+            title: rule.title,
+            description: rule.description,
+            clinicalAdvice: rule.clinicalAdvice,
+            source: 'Drugs.com & PDR.net Clinical Reference',
+            sourceUrl: 'https://www.drugs.com/drug_interactions.html',
+          }
+          diseaseAlerts.push(diseaseAlertObj)
+          detectedInteractions.push(diseaseAlertObj)
+        }
+      }
+    })
+  }
+
+  // Determine highest severity: Major (Red) > Moderate (Yellow) > Minor (Green)
+  const hasRed = detectedInteractions.some((i) => i.severity === 'Red')
+  const hasYellow = detectedInteractions.some((i) => i.severity === 'Yellow')
+  const minorInteractions = detectedInteractions.filter(
+    (i) => i.severity === 'Green'
+  )
+
+  if (hasRed) {
+    const primaryRed = detectedInteractions.find((i) => i.severity === 'Red')
+    return {
+      severity: 'Red',
+      rxNavSeverity: 'High',
+      drugsComCategory: 'Major',
+      title: `${primaryRed.title} (${primaryRed.drugA} + ${primaryRed.drugB})`,
+      description: primaryRed.description,
+      clinicalAdvice: primaryRed.clinicalAdvice,
+      isBlocked: true,
+      requiresAcknowledgment: false,
+      interactions: detectedInteractions,
+      diseaseAlerts,
+      allergyAlerts,
+      labInteractions,
+      sourceUrl: 'https://www.drugs.com/drug_interactions.html',
+    }
+  }
+
+  if (hasYellow) {
+    const primaryYellow = detectedInteractions.find(
+      (i) => i.severity === 'Yellow'
+    )
+    return {
+      severity: 'Yellow',
+      rxNavSeverity: 'Moderate',
+      drugsComCategory: 'Moderate',
+      title: `${primaryYellow.title} (${primaryYellow.drugA} + ${primaryYellow.drugB})`,
+      description: primaryYellow.description,
+      clinicalAdvice: primaryYellow.clinicalAdvice,
+      isBlocked: false,
+      requiresAcknowledgment: true,
+      interactions: detectedInteractions,
+      diseaseAlerts,
+      allergyAlerts,
+      labInteractions,
+      sourceUrl: 'https://www.drugs.com/drug_interactions.html',
+    }
+  }
+
+  // If candidate is not indexed in local rules and has no interactions
+  const isIndexed = [...candidateTokens].some((t) => KNOWN_LOCAL_DRUGS.has(t))
+  if (!isIndexed && minorInteractions.length === 0) {
+    return {
+      severity: 'Blue',
+      rxNavSeverity: 'None',
+      drugsComCategory: 'Global Reference',
+      isGlobalDrug: true,
+      title: `Global Drug Verified (${candidateDisplay})`,
+      description:
+        'Global Drug Detected: Verified against patient profile. Please inspect PDR.net Panel or Drugs.com link for specialized monographs.',
+      clinicalAdvice:
+        'This medication was selected from the live NIH RxTerms global formulary. Screened against active patient medications and profile.',
+      isBlocked: false,
+      requiresAcknowledgment: false,
+      interactions: [],
+      diseaseAlerts: [],
+      allergyAlerts,
+      labInteractions,
+      sourceUrl: `https://www.drugs.com/search.php?searchterm=${encodeURIComponent(
+        candidateDisplay
+      )}`,
+      pdrSearchUrl: `https://www.pdr.net/search-results?q=${encodeURIComponent(
+        candidateDisplay
+      )}`,
+    }
+  }
+
+  // Green / Minor or Cleared
+  const activeCount = activePrescriptions.length
+  const conditionCount = patientChronicDiseases.length
+  const primaryMinor = minorInteractions[0]
+
+  return {
+    severity: 'Green',
+    rxNavSeverity: 'None',
+    drugsComCategory: 'Minor',
+    title: primaryMinor
+      ? `Minor Interaction: ${primaryMinor.title}`
+      : 'Cleared by Drugs.com & PDR.net Clinical Safety Engine',
+    description: primaryMinor
+      ? primaryMinor.description
+      : `Safe to prescribe. Screened via Drugs.com against ${activeCount} active ${
+          activeCount === 1 ? 'medication' : 'medications'
+        } and ${conditionCount} patient-reported chronic ${
+          conditionCount === 1 ? 'condition' : 'conditions'
+        }.`,
+    clinicalAdvice: primaryMinor
+      ? primaryMinor.clinicalAdvice
+      : 'Standard clinical pharmacist counseling and adherence follow-up apply.',
+    isBlocked: false,
+    requiresAcknowledgment: false,
+    interactions: minorInteractions,
+    diseaseAlerts: [],
+    allergyAlerts,
+    labInteractions,
+    sourceUrl: 'https://www.drugs.com/drug_interactions.html',
+  }
+}
+
+/**
+ * Adapter #1: Drugs.com Interaction Fetcher
+ */
+export async function fetchExternalInteractionSource1(
+  candidateMedName,
+  activeMedNames = []
+) {
   const fakeRxList = activeMedNames.map((name) => ({ name }))
-  const result = checkDrugInteractions(candidateMedName, fakeRxList, [], [])
+  const result = evaluateDrugsComRules(candidateMedName, fakeRxList, [], [])
   return {
     source: 'Drugs.com Interaction Checker',
     referenceUrl: 'https://www.drugs.com/drug_interactions.html',
@@ -541,10 +1062,13 @@ export async function fetchExternalInteractionSource1(candidateMedName, activeMe
 }
 
 /**
- * Adapter #2: Simulated / Live PDR.net Contraindication & Dosing Reference (`https://www.pdr.net/`)
+ * Adapter #2: PDR.net Contraindication & Dosing Reference
  */
-export async function fetchExternalInteractionSource2(candidateMedName, patientConditions = []) {
-  const result = checkDrugInteractions(candidateMedName, [], patientConditions, [])
+export async function fetchExternalInteractionSource2(
+  candidateMedName,
+  patientConditions = []
+) {
+  const result = evaluateDrugsComRules(candidateMedName, [], patientConditions, [])
   return {
     source: "PDR.net (Prescribers' Digital Reference)",
     referenceUrl: 'https://www.pdr.net/',
@@ -554,240 +1078,150 @@ export async function fetchExternalInteractionSource2(candidateMedName, patientC
 }
 
 /**
- * Evaluates a candidate medication using Drugs.com & PDR.net clinical intelligence:
- * 1. Active Prescriptions (Drug-Drug Interactions: Major / Moderate / Minor)
- * 2. Patient's Chronic Diseases from Medical Form (Drug-Disease Contraindications)
- * 3. Patient's Reported Allergies from Medical Form (Drug-Allergy Contraindications)
- * 4. Laboratory Test Interferences ("Lab Interactions", e.g., Ibuprofen false-positive drug test)
+ * Main Live Interaction Verification Entrypoint:
+ * Evaluates Drugs.com deterministic clinical safety rules first.
+ * If Major (Red) or Moderate (Yellow) interaction is caught, returns immediately to lock or prompt.
+ * For unindexed global medications, executes supplemental live NIH RxNav queries.
  */
-export function checkDrugInteractions(
-  candidateMedName,
+export async function verifyLiveDrugInteractions(
+  candidateMedInput,
   activePrescriptions = [],
   patientChronicDiseases = [],
   patientAllergies = []
 ) {
-  if (!candidateMedName) {
-    return {
-      severity: 'Green',
-      drugsComCategory: 'Minor',
-      title: 'No Medication Selected',
-      description: 'Select a medication to evaluate Drugs.com Drug-Drug, Drug-Disease, and Lab Interactions.',
-      isBlocked: false,
-      interactions: [],
-      diseaseAlerts: [],
-      allergyAlerts: [],
-      labInteractions: [],
-      sourceUrl: 'https://www.drugs.com/drug_interactions.html',
-    }
+  if (!candidateMedInput) {
+    return evaluateDrugsComRules(
+      candidateMedInput,
+      activePrescriptions,
+      patientChronicDiseases,
+      patientAllergies
+    )
   }
 
-  const normalizedCandidate = normalizeDrugKey(candidateMedName)
-  const detectedInteractions = []
-  const diseaseAlerts = []
-  const allergyAlerts = []
-  const labInteractions = getLabInteractionsForDrug(candidateMedName, activePrescriptions)
-
-  // A. Check Drug-to-Allergy Contraindications
-  const normalizedAllergies = Array.isArray(patientAllergies)
-    ? patientAllergies.join(' ').toLowerCase()
-    : String(patientAllergies || '').toLowerCase()
-
-  if (normalizedAllergies) {
-    DRUG_ALLERGY_RULES.forEach((rule) => {
-      if (rule.drug === normalizedCandidate) {
-        const matchedKeyword = rule.allergyKeywords.find((kw) =>
-          normalizedAllergies.includes(kw)
-        )
-        if (matchedKeyword) {
-          const alertObj = {
-            drugA: candidateMedName,
-            drugB: `Allergy: ${matchedKeyword.toUpperCase()}`,
-            type: rule.type,
-            severity: rule.severity,
-            drugsComCategory: rule.drugsComCategory || mapSeverityToDrugsComCategory(rule.severity),
-            title: rule.title,
-            description: rule.description,
-            clinicalAdvice: rule.clinicalAdvice,
-            sourceUrl: 'https://www.drugs.com/drug_interactions.html',
-          }
-          allergyAlerts.push(alertObj)
-          detectedInteractions.push(alertObj)
-        }
-      }
-    })
-
-    // Dynamic Global Drug-to-Allergy Matching: if patient added a custom allergy matching the candidate drug
-    if (
-      normalizedCandidate.length >= 3 &&
-      allergyAlerts.length === 0 &&
-      normalizedAllergies.includes(normalizedCandidate)
-    ) {
-      const dynamicAllergyAlert = {
-        drugA: candidateMedName,
-        drugB: `Documented Allergy (${normalizedCandidate.toUpperCase()})`,
-        type: 'Allergy Contraindication',
-        severity: 'Red',
-        drugsComCategory: 'Major',
-        title: `SEVERE ALLERGY ALERT: Documented ${candidateMedName} Hypersensitivity`,
-        description: `Patient’s Medical Form documents a direct allergy to ${candidateMedName}. Prescribing this agent carries a severe hypersensitivity / anaphylaxis risk.`,
-        clinicalAdvice:
-          'Prescription strictly blocked by patient allergy profile. Select an alternative therapeutic class.',
-        sourceUrl: 'https://www.drugs.com/drug_interactions.html',
-      }
-      allergyAlerts.push(dynamicAllergyAlert)
-      detectedInteractions.push(dynamicAllergyAlert)
-    }
-  }
-
-  // B. Check Drug-to-Drug Interactions (DDI) against active prescriptions
-  activePrescriptions.forEach((rx) => {
-    const rxMedName = rx.medication?.name || rx.name || ''
-    const normalizedRx = normalizeDrugKey(rxMedName)
-
-    if (!normalizedRx || normalizedRx === normalizedCandidate) return
-
-    const match = DDI_RULES.find((rule) => {
-      const [drugA, drugB] = rule.drugs
-      return (
-        (drugA === normalizedCandidate && drugB === normalizedRx) ||
-        (drugB === normalizedCandidate && drugA === normalizedRx)
-      )
-    })
-
-    if (match) {
-      detectedInteractions.push({
-        drugA: candidateMedName,
-        drugB: rxMedName,
-        type: match.type || 'Drug-Drug Interaction',
-        severity: match.severity,
-        drugsComCategory: match.drugsComCategory || mapSeverityToDrugsComCategory(match.severity),
-        title: match.title,
-        description: match.description,
-        clinicalAdvice: match.clinicalAdvice,
-        sourceUrl: match.sourceUrl || 'https://www.drugs.com/drug_interactions.html',
-      })
-    }
-  })
-
-  // C. Check Drug-to-Disease Contraindications against Patient Medical Form
-  const normalizedDiseases = (patientChronicDiseases || []).map((d) =>
-    String(d).toLowerCase()
+  // 1. Evaluate Drugs.com Clinical Rules immediately (zero lag, deterministic)
+  const drugsComResult = evaluateDrugsComRules(
+    candidateMedInput,
+    activePrescriptions,
+    patientChronicDiseases,
+    patientAllergies
   )
 
-  if (normalizedDiseases.length > 0) {
-    DRUG_DISEASE_RULES.forEach((rule) => {
-      if (rule.drug === normalizedCandidate) {
-        const matchedDisease = patientChronicDiseases.find((patientDis) =>
-          rule.conditionKeywords.some((kw) =>
-            String(patientDis).toLowerCase().includes(kw)
-          )
-        )
+  // 2. If Major (Red) interaction detected, HARD LOCK IMMEDIATELY
+  if (drugsComResult.severity === 'Red') {
+    return drugsComResult
+  }
 
-        if (matchedDisease) {
-          const diseaseAlertObj = {
-            drugA: candidateMedName,
-            drugB: `Condition: ${matchedDisease}`,
-            type: rule.type,
-            severity: rule.severity,
-            drugsComCategory: rule.drugsComCategory || mapSeverityToDrugsComCategory(rule.severity),
-            title: rule.title,
-            description: rule.description,
-            clinicalAdvice: rule.clinicalAdvice,
-            sourceUrl: 'https://www.drugs.com/drug_interactions.html',
+  // 3. Resolve RxCUIs in background for prescription record persistence
+  let candidateRxcui = extractRxCui(candidateMedInput)
+  try {
+    if (!candidateRxcui) {
+      const resolved = await resolveDrugRxCui(candidateMedInput)
+      candidateRxcui = resolved.rxcui
+    }
+  } catch (err) {
+    console.warn('RxCUI resolution note:', err.message)
+  }
+
+  // If Moderate (Yellow) interaction detected, return with requiresAcknowledgment
+  if (drugsComResult.severity === 'Yellow') {
+    return {
+      ...drugsComResult,
+      candidateRxcui,
+    }
+  }
+
+  // 4. For unindexed global medications (Blue), perform supplemental NIH RxNav check if RxCUIs exist
+  if (drugsComResult.isGlobalDrug && candidateRxcui && activePrescriptions.length > 0) {
+    try {
+      const activeRxcuis = activePrescriptions
+        .map((rx) => extractRxCui(rx.medication || rx))
+        .filter(Boolean)
+
+      if (activeRxcuis.length > 0) {
+        const queryList = [candidateRxcui, ...activeRxcuis]
+        const rxNavUrl = `${RXNAV_INTERACTION_LIST_ENDPOINT}?rxcuis=${queryList.join('+')}`
+        const res = await fetch(rxNavUrl, {
+          headers: { Accept: 'application/json' },
+        })
+
+        if (res.ok) {
+          const data = await res.json()
+          const pairList = []
+          const fullTypeGroups = data?.interactionTypeGroup || []
+
+          fullTypeGroups.forEach((group) => {
+            ;(group.interactionType || []).forEach((type) => {
+              ;(type.interactionPair || []).forEach((pair) => {
+                pairList.push(pair)
+              })
+            })
+          })
+
+          if (pairList.length > 0) {
+            const firstPair = pairList[0]
+            const severityLevel =
+              firstPair.severity?.toLowerCase() === 'high' ? 'Red' : 'Yellow'
+            const isBlock = severityLevel === 'Red'
+
+            return {
+              severity: severityLevel,
+              rxNavSeverity: firstPair.severity || 'Moderate',
+              drugsComCategory: mapSeverityToDrugsComCategory(severityLevel),
+              title: `Live NIH RxNav Interaction (${firstPair.interactionConcept?.[0]?.minConceptItem?.name || 'Drug'} + ${firstPair.interactionConcept?.[1]?.minConceptItem?.name || 'Drug'})`,
+              description:
+                firstPair.description ||
+                'Clinical interaction identified by NIH RxNav live interaction database.',
+              clinicalAdvice: isBlock
+                ? 'Prescription blocked by live NIH RxNav interaction rules.'
+                : 'Clinical monitoring required.',
+              isBlocked: isBlock,
+              requiresAcknowledgment: !isBlock,
+              interactions: pairList.map((p) => ({
+                drugA: p.interactionConcept?.[0]?.minConceptItem?.name,
+                drugB: p.interactionConcept?.[1]?.minConceptItem?.name,
+                type: 'Live NIH RxNav Interaction',
+                severity: severityLevel,
+                rxNavSeverity: p.severity,
+                drugsComCategory: mapSeverityToDrugsComCategory(severityLevel),
+                title: p.description || 'Interaction',
+                description: p.description,
+                source: 'NIH NLM RxNav Live Interaction API',
+                sourceUrl: rxNavUrl,
+              })),
+              diseaseAlerts: drugsComResult.diseaseAlerts,
+              allergyAlerts: drugsComResult.allergyAlerts,
+              labInteractions: drugsComResult.labInteractions,
+              candidateRxcui,
+              sourceUrl: rxNavUrl,
+            }
           }
-          diseaseAlerts.push(diseaseAlertObj)
-          detectedInteractions.push(diseaseAlertObj)
         }
       }
-    })
-  }
-
-  // Determine highest severity across all checks (Major [Red] > Moderate [Yellow] > Minor [Green])
-  const hasRed = detectedInteractions.some((i) => i.severity === 'Red')
-  const hasYellow = detectedInteractions.some((i) => i.severity === 'Yellow')
-  const minorInteractions = detectedInteractions.filter((i) => i.severity === 'Green')
-
-  if (hasRed) {
-    const primaryRed = detectedInteractions.find((i) => i.severity === 'Red')
-    return {
-      severity: 'Red',
-      drugsComCategory: 'Major',
-      title: `${primaryRed.title} (${primaryRed.drugA} + ${primaryRed.drugB})`,
-      description: primaryRed.description,
-      clinicalAdvice: primaryRed.clinicalAdvice,
-      isBlocked: true,
-      interactions: detectedInteractions,
-      diseaseAlerts,
-      allergyAlerts,
-      labInteractions,
-      sourceUrl: 'https://www.drugs.com/drug_interactions.html',
+    } catch (err) {
+      console.warn('Supplemental RxNav query bypassed:', err.message)
     }
   }
 
-  if (hasYellow) {
-    const primaryYellow = detectedInteractions.find((i) => i.severity === 'Yellow')
-    return {
-      severity: 'Yellow',
-      drugsComCategory: 'Moderate',
-      title: `${primaryYellow.title} (${primaryYellow.drugA} + ${primaryYellow.drugB})`,
-      description: primaryYellow.description,
-      clinicalAdvice: primaryYellow.clinicalAdvice,
-      isBlocked: false,
-      interactions: detectedInteractions,
-      diseaseAlerts,
-      allergyAlerts,
-      labInteractions,
-      sourceUrl: 'https://www.drugs.com/drug_interactions.html',
-    }
-  }
-
-  // Graceful Grey/Blue Alert if the newly searched global drug is not in our local mock database
-  if (!KNOWN_LOCAL_DRUGS.has(normalizedCandidate) && minorInteractions.length === 0) {
-    return {
-      severity: 'Blue',
-      drugsComCategory: 'Global Reference',
-      isGlobalDrug: true,
-      title: `Global Drug Detected (${candidateMedName})`,
-      description:
-        'Global Drug Detected: Please consult the PDR.net Panel or Drugs.com link directly to verify interactions.',
-      clinicalAdvice:
-        'This medication was added from the live global NIH RxTerms formulary and is not indexed in the local rule cache. Please consult the PDR.net Panel or Drugs.com link directly to verify interactions before dispensing.',
-      isBlocked: false,
-      interactions: [],
-      diseaseAlerts: [],
-      allergyAlerts: [],
-      labInteractions,
-      sourceUrl: `https://www.drugs.com/search.php?searchterm=${encodeURIComponent(candidateMedName)}`,
-      pdrSearchUrl: `https://www.pdr.net/search-results?q=${encodeURIComponent(candidateMedName)}`,
-    }
-  }
-
-  // Green / Minor or No Conflict
-  const activeCount = activePrescriptions.length
-  const conditionCount = patientChronicDiseases.length
-  const primaryMinor = minorInteractions[0]
-
+  // Return standard cleared / safe Drugs.com result
   return {
-    severity: 'Green',
-    drugsComCategory: 'Minor',
-    title: primaryMinor
-      ? `Minor Interaction: ${primaryMinor.title}`
-      : 'Cleared by Drugs.com & PDR.net Safety Engine',
-    description: primaryMinor
-      ? primaryMinor.description
-      : `Safe to prescribe. Screened via Drugs.com against ${activeCount} active ${
-          activeCount === 1 ? 'medication' : 'medications'
-        } and ${conditionCount} patient-reported chronic ${
-          conditionCount === 1 ? 'condition' : 'conditions'
-        }.`,
-    clinicalAdvice: primaryMinor
-      ? primaryMinor.clinicalAdvice
-      : 'Standard pharmacist counseling and adherence follow-up apply.',
-    isBlocked: false,
-    interactions: minorInteractions,
-    diseaseAlerts: [],
-    allergyAlerts: [],
-    labInteractions,
-    sourceUrl: 'https://www.drugs.com/drug_interactions.html',
+    ...drugsComResult,
+    candidateRxcui,
   }
+}
+
+/**
+ * Backwards-compatible alias
+ */
+export const checkDrugInteractions = (
+  candidateMedName,
+  activePrescriptions = [],
+  patientChronicDiseases = [],
+  patientAllergies = []
+) => {
+  return evaluateDrugsComRules(
+    candidateMedName,
+    activePrescriptions,
+    patientChronicDiseases,
+    patientAllergies
+  )
 }

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useTranslation } from 'react-i18next'
 import { supabase, supabaseAdmin } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useMedicationReminders } from '../hooks/useMedicationReminders'
@@ -46,6 +47,7 @@ const bentoItemVariants = {
 }
 
 export default function PatientDashboard() {
+  const { t } = useTranslation()
   const { user, profile, refreshProfile } = useAuth()
 
   const [activeTab, setActiveTab] = useState('schedule') // 'schedule' | 'profile' | 'medications'
@@ -89,16 +91,18 @@ export default function PatientDashboard() {
     setIsTourOpen(false)
   }
 
-  const [greeting] = useState(() => {
+  const greeting = useMemo(() => {
     const hour = new Date().getHours()
-    if (hour < 12) return 'Good Morning'
-    if (hour < 17) return 'Good Afternoon'
-    return 'Good Evening'
-  })
+    if (hour < 12) return t('patient.greetingMorning')
+    if (hour < 17) return t('patient.greetingAfternoon')
+    return t('patient.greetingEvening')
+  }, [t])
 
-  // Fetch Prescriptions & Clinical Data for Logged-In Patient using supabaseAdmin fallback
+  // Fetch Prescriptions & Clinical Data for Logged-In Patient using strict user.id isolation
   const loadPatientData = useCallback(async () => {
     if (!user?.id) {
+      setPrescriptions([])
+      setPatientData(null)
       setLoading(false)
       return
     }
@@ -107,7 +111,7 @@ export default function PatientDashboard() {
       setLoading(true)
       const client = supabaseAdmin || supabase
 
-      // 1. Fetch Active Prescriptions
+      // 1. Fetch Active Prescriptions strictly filtered by patient_id = user.id
       const { data: rxData, error: rxErr } = await client
         .from('prescriptions')
         .select(`
@@ -132,28 +136,44 @@ export default function PatientDashboard() {
         .eq('status', 'active')
         .order('created_at', { ascending: false })
 
-      if (!rxErr) {
-        setPrescriptions(rxData || [])
+      if (!rxErr && Array.isArray(rxData)) {
+        const isolatedRxs = rxData.filter(
+          (rx) => String(rx.patient_id) === String(user.id)
+        )
+        setPrescriptions(isolatedRxs)
+      } else {
+        setPrescriptions([])
       }
 
-      // 2. Fetch Patient Clinical Data
-      const { data: pData, error: pErr } = await client
+      // 2. Fetch Patient Clinical Data strictly filtered by user_id = user.id
+      const { data: pRows, error: pErr } = await client
         .from('patients_data')
         .select('*')
         .eq('user_id', user.id)
-        .maybeSingle()
 
-      if (!pErr && pData) {
-        setPatientData(pData)
+      if (!pErr && Array.isArray(pRows)) {
+        const matchingRows = pRows.filter(
+          (row) => String(row.user_id) === String(user.id)
+        )
+        setPatientData(
+          matchingRows.length > 0 ? matchingRows[matchingRows.length - 1] : null
+        )
+      } else {
+        setPatientData(null)
       }
     } catch (err) {
       console.error('Error fetching patient dashboard data:', err)
+      setPrescriptions([])
+      setPatientData(null)
     } finally {
       setLoading(false)
     }
   }, [user?.id])
 
+  // Reset state immediately when user.id changes before fetching new user data
   useEffect(() => {
+    setPrescriptions([])
+    setPatientData(null)
     loadPatientData()
 
     if (!user?.id) return
@@ -347,45 +367,45 @@ export default function PatientDashboard() {
           className="absolute -left-20 -bottom-20 w-80 h-80 bg-amber-300/15 dark:bg-brand-teal/20 rounded-full blur-3xl pointer-events-none"
         />
 
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
-          <div className="flex items-start gap-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10 min-w-0">
+          <div className="flex items-start gap-3.5 sm:gap-4 min-w-0 flex-1">
             <motion.div
               whileHover={{ rotate: [-5, 5, 0], scale: 1.05 }}
               className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-white/80 dark:bg-dark-teal-950/80 border border-mint-200 dark:border-mint-800/80 flex items-center justify-center p-2.5 shrink-0 shadow-sm"
             >
               <img src="/logo-patient.png" alt="Pharminder Patient Logo" className="w-full h-full object-contain drop-shadow-sm" />
             </motion.div>
-            <div className="space-y-3">
+            <div className="space-y-3 min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="inline-flex items-center gap-1.5 text-[11px] font-black uppercase tracking-widest px-3 py-1 rounded-full bg-brand-mint text-dark-teal-950 shadow-xs">
-                  <HeartPulse className="w-3.5 h-3.5" />
-                  Patient Companion Portal (/patient)
+                  <HeartPulse className="w-3.5 h-3.5 shrink-0" />
+                  <span>{t('patient.portalBadge')}</span>
                 </span>
                 <span className="inline-flex items-center gap-1.5 text-[11px] font-bold px-3 py-1 rounded-full bg-white/90 dark:bg-dark-teal-950 text-brand-teal dark:text-mint-300 border border-mint-200 dark:border-mint-800/80 shadow-xs">
-                  <ShieldCheck className="w-3.5 h-3.5 text-brand-mint" />
-                  Connected to Dr. Sarah Smith, PharmD
+                  <ShieldCheck className="w-3.5 h-3.5 text-brand-mint shrink-0" />
+                  <span>{t('patient.connectedDoctor')}</span>
                 </span>
               </div>
 
-              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight text-slate-900 dark:text-slate-100">
+              <h1 className="text-xl sm:text-3xl lg:text-4xl font-black tracking-tight text-slate-900 dark:text-slate-100 truncate">
                 {greeting}, {profile?.full_name || user?.email?.split('@')[0] || 'Jane Doe'}
               </h1>
 
-              <p className="text-sm sm:text-base text-slate-600 dark:text-slate-300 max-w-2xl font-medium leading-relaxed">
-                Track your daily medications below or update your <strong className="text-slate-900 dark:text-white">Medical Profile & Chronic Conditions Form</strong> so your doctor can screen all prescriptions for safety.
+              <p className="text-sm sm:text-base text-slate-600 dark:text-slate-300 max-w-2xl font-medium leading-relaxed break-words">
+                {t('patient.welcomeSubtitle')}
               </p>
 
               {/* Patient Clinical Summary Pills */}
               <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
                 <span className="px-3.5 py-1.5 rounded-2xl bg-rose-50 dark:bg-rose-950/70 border border-rose-200 dark:border-rose-800/80 text-rose-800 dark:text-rose-200 font-bold flex items-center gap-1.5">
-                  <HeartPulse className="w-3.5 h-3.5 text-rose-500" />
-                  <span>Chronic Conditions: {chronicList.join(', ')}</span>
+                  <HeartPulse className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                  <span>{t('patient.chronicConditions')}: {chronicList.join(', ')}</span>
                 </span>
 
                 {parsedIntake.currentSymptoms && (
                   <span className="px-3.5 py-1.5 rounded-2xl bg-amber-50 dark:bg-amber-950/70 border border-amber-200 dark:border-amber-800/80 text-amber-900 dark:text-amber-200 font-bold flex items-center gap-1.5">
-                    <AlertCircle className="w-3.5 h-3.5 text-amber-500" />
-                    <span>Reported Symptoms: {parsedIntake.currentSymptoms}</span>
+                    <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                    <span>{t('patient.reportedSymptoms')}: {parsedIntake.currentSymptoms}</span>
                   </span>
                 )}
 
@@ -396,8 +416,8 @@ export default function PatientDashboard() {
                   onClick={() => setActiveTab('profile')}
                   className="px-3.5 py-1.5 rounded-2xl bg-brand-teal text-white font-extrabold hover:bg-dark-teal-900 transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
                 >
-                  <ClipboardList className="w-3.5 h-3.5 text-brand-mint" />
-                  <span>Edit Medical Form</span>
+                  <ClipboardList className="w-3.5 h-3.5 text-brand-mint shrink-0" />
+                  <span>{t('patient.editMedicalForm')}</span>
                 </motion.button>
 
                 <motion.button
@@ -407,8 +427,8 @@ export default function PatientDashboard() {
                   onClick={handleOpenGuidedTour}
                   className="px-3.5 py-1.5 rounded-2xl bg-mint-100 dark:bg-mint-950/90 text-brand-teal dark:text-mint-300 border border-brand-mint/70 font-extrabold hover:bg-mint-200/70 transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
                 >
-                  <HelpCircle className="w-3.5 h-3.5 text-brand-mint" />
-                  <span>Help / 3-Step Guided Tour</span>
+                  <HelpCircle className="w-3.5 h-3.5 text-brand-mint shrink-0" />
+                  <span>{t('patient.guidedTour')}</span>
                 </motion.button>
               </div>
             </div>
@@ -424,8 +444,8 @@ export default function PatientDashboard() {
               className="min-h-[48px] inline-flex items-center justify-center gap-2.5 px-5 py-3 rounded-2xl bg-gradient-to-r from-brand-mint to-teal-400 hover:from-mint-400 hover:to-teal-500 text-dark-teal-950 text-xs sm:text-sm font-black shadow-md shadow-brand-mint/25 transition-all cursor-pointer"
               title="Test chime sound and pop-up modal immediately"
             >
-              <BellRing className="w-4 h-4 animate-bounce" />
-              <span>Test Dose Alarm & Chime</span>
+              <BellRing className="w-4 h-4 animate-bounce shrink-0" />
+              <span>{t('patient.testAlarm')}</span>
             </motion.button>
 
             <div className="flex items-center gap-2">
@@ -435,13 +455,13 @@ export default function PatientDashboard() {
                   onClick={requestPermission}
                   className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs font-bold hover:bg-amber-100 transition-colors cursor-pointer shadow-xs"
                 >
-                  <Volume2 className="w-4 h-4 text-amber-600" />
-                  <span>Enable Alerts</span>
+                  <Volume2 className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>{t('patient.enableAlerts')}</span>
                 </button>
               ) : (
                 <div className="inline-flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-mint-50 dark:bg-mint-950/70 border border-mint-200 dark:border-mint-800 text-brand-teal dark:text-mint-300 text-xs font-bold shadow-xs">
-                  <span className="w-2 h-2 rounded-full bg-brand-mint animate-ping" />
-                  <span>Audio Reminders On</span>
+                  <span className="w-2 h-2 rounded-full bg-brand-mint animate-ping shrink-0" />
+                  <span>{t('patient.audioRemindersOn')}</span>
                 </div>
               )}
 
@@ -492,12 +512,12 @@ export default function PatientDashboard() {
           className="p-5 sm:p-6 rounded-3xl bg-white dark:bg-[#0d2232] border border-slate-200/80 dark:border-dark-teal-800/60 shadow-soft-sm flex items-start justify-between cursor-pointer"
         >
           <div>
-            <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-widest">Next Scheduled Dose</p>
+            <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-widest">{t('patient.nextDose')}</p>
             <h3 className="text-2xl sm:text-3xl font-black mt-1.5 text-slate-900 dark:text-slate-100 font-tabular">
               08:00 AM
             </h3>
             <p className="text-xs text-brand-mint font-bold mt-1.5 flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5" /> Daily Follow-Up Active
+              <Clock className="w-3.5 h-3.5" /> {t('patient.dailyFollowUp')}
             </p>
           </div>
           <div className="w-12 h-12 rounded-2xl bg-mint-50 dark:bg-mint-950/80 flex items-center justify-center text-brand-mint shadow-inner">
@@ -512,12 +532,12 @@ export default function PatientDashboard() {
           className="p-5 sm:p-6 rounded-3xl bg-white dark:bg-[#0d2232] border border-slate-200/80 dark:border-dark-teal-800/60 shadow-soft-sm flex items-start justify-between cursor-pointer"
         >
           <div>
-            <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-widest">Active Regimens</p>
+            <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-widest">{t('patient.activeRegimens')}</p>
             <h3 className="text-2xl sm:text-3xl font-black mt-1.5 text-brand-teal dark:text-mint-300 font-tabular">
-              {displayedPrescriptions.length} Meds
+              {displayedPrescriptions.length} {t('patient.meds')}
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 flex items-center gap-1.5 font-medium">
-              <ShieldCheck className="w-3.5 h-3.5 text-brand-mint" /> Supervised by Doctor
+              <ShieldCheck className="w-3.5 h-3.5 text-brand-mint" /> {t('patient.supervisedByDoctor')}
             </p>
           </div>
           <div className="w-12 h-12 rounded-2xl bg-dark-teal-50 dark:bg-dark-teal-950/80 flex items-center justify-center text-brand-teal dark:text-mint-300 shadow-inner">
@@ -532,12 +552,12 @@ export default function PatientDashboard() {
           className="p-5 sm:p-6 rounded-3xl bg-white dark:bg-[#0d2232] border border-slate-200/80 dark:border-dark-teal-800/60 shadow-soft-sm flex items-start justify-between cursor-pointer"
         >
           <div>
-            <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-widest">Reported Conditions</p>
+            <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-widest">{t('patient.reportedConditions')}</p>
             <h3 className="text-2xl sm:text-3xl font-black mt-1.5 text-rose-600 dark:text-rose-400 font-tabular">
               {chronicList.length} Active
             </h3>
             <p className="text-xs text-brand-mint font-bold mt-1.5 flex items-center gap-1">
-              <span>Tap to update medical form &rarr;</span>
+              <span>{t('patient.tapToUpdate')}</span>
             </p>
           </div>
           <div className="w-12 h-12 rounded-2xl bg-rose-50 dark:bg-rose-950/80 flex items-center justify-center text-rose-500 shadow-inner">
@@ -551,12 +571,12 @@ export default function PatientDashboard() {
           className="p-5 sm:p-6 rounded-3xl bg-white dark:bg-[#0d2232] border border-slate-200/80 dark:border-dark-teal-800/60 shadow-soft-sm flex items-start justify-between"
         >
           <div>
-            <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-widest">Doctor Direct Line</p>
+            <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-widest">{t('patient.doctorLine')}</p>
             <h3 className="text-xl sm:text-2xl font-black mt-1.5 text-slate-900 dark:text-slate-100">
-              24/7 Care Team
+              {t('patient.careTeam')}
             </h3>
             <p className="text-xs text-brand-mint font-bold mt-1.5 flex items-center gap-1.5">
-              <PhoneCall className="w-3.5 h-3.5" /> Ext #4402 • PharmD
+              <PhoneCall className="w-3.5 h-3.5" /> {t('patient.extNumber')}
             </p>
           </div>
           <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800/80 flex items-center justify-center text-brand-teal dark:text-mint-300 shadow-inner">
@@ -577,7 +597,7 @@ export default function PatientDashboard() {
           }`}
         >
           <Clock className="w-5 h-5 shrink-0" />
-          <span>1. Today’s Follow-Up & Schedule</span>
+          <span>{t('patient.tabSchedule')}</span>
         </button>
 
         <button
@@ -590,7 +610,7 @@ export default function PatientDashboard() {
           }`}
         >
           <ClipboardList className="w-5 h-5 shrink-0" />
-          <span>2. Medical Form & Chronic Diseases</span>
+          <span>{t('patient.tabProfile')}</span>
         </button>
 
         <button
@@ -603,7 +623,7 @@ export default function PatientDashboard() {
           }`}
         >
           <Pill className="w-5 h-5 shrink-0" />
-          <span>3. My Active Medications ({displayedPrescriptions.length})</span>
+          <span>{t('patient.tabMedications')}</span>
         </button>
       </div>
 
@@ -634,6 +654,7 @@ export default function PatientDashboard() {
             transition={{ duration: 0.22 }}
           >
             <PatientMedicalProfileForm
+              key={user?.id || 'guest'}
               user={user}
               profile={profile}
               patientData={patientData}
