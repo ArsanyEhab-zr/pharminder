@@ -88,27 +88,66 @@ export function extractBaseIngredientName(rawMedName = '') {
   return rawMedName
     .replace(/\[RxCUI:\s*\d+\]/gi, ' ')
     .replace(/\([^)]*\)/g, ' ')
-    .replace(/\b\d+(\.\d+)?\s*(mg|mcg|g|ml|iu|meq|%|unt|actuation|tab|cap|tablet|capsule|oral|pill)\b/gi, ' ')
-    .replace(/[^a-zA-Z\s-]/g, ' ')
+    .replace(
+      /\b\d+(\.\d+)?\s*(mg|mcg|ug|g|ml|l|iu|meq|%|unt|actuation|dose|puffs?)\b/gi,
+      ' '
+    )
+    .replace(
+      /\b(tab|tabs|cap|caps|tablet|tablets|capsule|capsules|oral|pill|pills|sublingual|extended|release|delayed|chewable|injection|injectable|intravenous|solution|suspension|syrup|cream|ointment|gel|patch|spray|drops|inhaler|film|coated|effervescent|disintegrating|er|xr|sr|cr|dr)\b/gi,
+      ' '
+    )
+    .replace(/[^a-zA-Z\s/-]/g, ' ')
     .trim()
     .replace(/\s+/g, ' ')
 }
 
 /**
- * Resolves the Concept Unique Identifier (RxCUI) for any medication name using live NIH APIs.
- * @param {string|object} medInput Medication object or drug name string
- * @returns {Promise<{ rxcui: string|null, ingredientRxcui: string|null, ingredientName: string }>}
+ * Fetch helper with AbortController timeout so external clinical APIs never stall the UI.
  */
-export async function resolveDrugRxCui(medInput) {
+async function fetchJsonWithTimeout(url, timeoutMs = 4500) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    })
+    if (!res.ok) return null
+    return await res.json()
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/**
+ * Resolves the Concept Unique Identifier (RxCUI), active generic ingredients (tty=IN+MIN),
+ * and NIH RxClass pharmacological classes for any medication name using live NIH RxNav APIs.
+ *
+ * @param {string|object} medInput Medication object or drug name string
+ * @param {string} [overrideSearchName] Optional pre-normalized generic name (e.g. from BRAND_AND_SYNONYM_MAP)
+ * @returns {Promise<{
+ *   rxcui: string|null,
+ *   ingredientRxcui: string|null,
+ *   ingredientName: string,
+ *   ingredients: string[],
+ *   rxClasses: string[]
+ * }>}
+ */
+export async function resolveDrugRxCui(medInput, overrideSearchName = '') {
   const existingRxcui = extractRxCui(medInput)
   const rawName =
     typeof medInput === 'object'
       ? medInput?.cleanName || medInput?.baseName || medInput?.name || ''
       : String(medInput || '')
 
-  const baseIngredient = extractBaseIngredientName(rawName)
+  const baseIngredient =
+    (overrideSearchName && extractBaseIngredientName(overrideSearchName)) ||
+    extractBaseIngredientName(rawName)
   const firstWord = baseIngredient.split(/\s+/)[0]?.toLowerCase() || ''
-  const cacheKey = `${firstWord}|${existingRxcui || ''}`
+  const cacheKey = `${baseIngredient.toLowerCase()}|${existingRxcui || ''}`
 
   if (rxcuiCache.has(cacheKey)) {
     return rxcuiCache.get(cacheKey)
@@ -118,86 +157,94 @@ export async function resolveDrugRxCui(medInput) {
   let ingredientRxcui =
     (typeof medInput === 'object' && medInput?.ingredientRxcui) || null
   let ingredientName = baseIngredient || rawName
+  const ingredientsSet = new Set()
+  const rxClassesSet = new Set()
+
+  if (baseIngredient) {
+    baseIngredient
+      .split(/[/+,]/)
+      .map((s) => s.trim().toLowerCase())
+      .filter((s) => s.length >= 3)
+      .forEach((part) => ingredientsSet.add(part))
+  }
 
   try {
     // 1. If we don't have an RxCUI yet, query live NIH RxNav /REST/rxcui.json
     if (!resolvedRxcui && baseIngredient) {
-      const exactUrl = `${NIH_RXNAV_BASE}/rxcui.json?name=${encodeURIComponent(
-        baseIngredient
-      )}&search=2`
-      const exactRes = await fetch(exactUrl, {
-        headers: { Accept: 'application/json' },
-      })
-      if (exactRes.ok) {
-        const exactJson = await exactRes.json()
-        const idList = exactJson?.idGroup?.rxnormId
-        if (Array.isArray(idList) && idList.length > 0) {
-          resolvedRxcui = String(idList[0])
-        }
+      const exactJson = await fetchJsonWithTimeout(
+        `${NIH_RXNAV_BASE}/rxcui.json?name=${encodeURIComponent(baseIngredient)}&search=2`
+      )
+      const idList = exactJson?.idGroup?.rxnormId
+      if (Array.isArray(idList) && idList.length > 0) {
+        resolvedRxcui = String(idList[0])
       }
     }
 
-    // 2. Fallback to NIH RxNav approximateTerm.json if multi-word or salt form
+    // 2. Fallback to NIH RxNav approximateTerm.json if multi-word, brand, or salt form
     if (!resolvedRxcui && (baseIngredient || firstWord)) {
-      const queryTerm = firstWord || baseIngredient
-      const approxUrl = `${NIH_RXNAV_BASE}/approximateTerm.json?term=${encodeURIComponent(
-        queryTerm
-      )}&maxEntries=3`
-      const approxRes = await fetch(approxUrl, {
-        headers: { Accept: 'application/json' },
-      })
-      if (approxRes.ok) {
-        const approxJson = await approxRes.json()
-        const candidates = approxJson?.approximateGroup?.candidate
-        if (Array.isArray(candidates) && candidates.length > 0) {
-          resolvedRxcui = String(candidates[0].rxcui)
-        }
+      const queryTerm = baseIngredient || firstWord
+      const approxJson = await fetchJsonWithTimeout(
+        `${NIH_RXNAV_BASE}/approximateTerm.json?term=${encodeURIComponent(queryTerm)}&maxEntries=3`
+      )
+      const candidates = approxJson?.approximateGroup?.candidate
+      if (Array.isArray(candidates) && candidates.length > 0) {
+        resolvedRxcui = String(candidates[0].rxcui)
       }
     }
 
     // 3. Fallback to NIH RxTerms search if still unresolved
     if (!resolvedRxcui && firstWord) {
-      const rxTermsUrl = `${NIH_RXTERMS_ENDPOINT}?terms=${encodeURIComponent(
-        firstWord
-      )}&ef=RXCUIS,SXDG_RXCUI&maxList=1`
-      const rxTermsRes = await fetch(rxTermsUrl, {
-        headers: { Accept: 'application/json' },
-      })
-      if (rxTermsRes.ok) {
-        const rxTermsJson = await rxTermsRes.json()
-        const ef = rxTermsJson?.[2] || {}
-        const rxcuiArr = ef.RXCUIS?.[0]
-        const sxdg = ef.SXDG_RXCUI?.[0]
-        if (Array.isArray(rxcuiArr) && rxcuiArr.length > 0) {
-          resolvedRxcui = String(rxcuiArr[0])
-        } else if (sxdg) {
-          resolvedRxcui = String(sxdg)
-        }
+      const rxTermsJson = await fetchJsonWithTimeout(
+        `${NIH_RXTERMS_ENDPOINT}?terms=${encodeURIComponent(firstWord)}&ef=RXCUIS,SXDG_RXCUI&maxList=1`
+      )
+      const ef = rxTermsJson?.[2] || {}
+      const rxcuiArr = ef.RXCUIS?.[0]
+      const sxdg = ef.SXDG_RXCUI?.[0]
+      if (Array.isArray(rxcuiArr) && rxcuiArr.length > 0) {
+        resolvedRxcui = String(rxcuiArr[0])
+      } else if (sxdg) {
+        resolvedRxcui = String(sxdg)
       }
     }
 
-    // 4. Resolve base active ingredient RxCUI (tty=IN) from RxNav so product-level and ingredient-level checks both work
-    if (resolvedRxcui && !ingredientRxcui) {
-      const relatedUrl = `${NIH_RXNAV_BASE}/rxcui/${encodeURIComponent(
-        resolvedRxcui
-      )}/related.json?tty=IN+MIN`
-      const relatedRes = await fetch(relatedUrl, {
-        headers: { Accept: 'application/json' },
-      })
-      if (relatedRes.ok) {
-        const relatedJson = await relatedRes.json()
-        const conceptGroups = relatedJson?.relatedGroup?.conceptGroup || []
-        for (const group of conceptGroups) {
-          const props = group?.conceptProperties
-          if (Array.isArray(props) && props.length > 0) {
+    // 4. Resolve base active ingredient(s) (tty=IN+MIN) from RxNav so product-level and brand names map to exact generic IN(s)
+    if (resolvedRxcui) {
+      const relatedJson = await fetchJsonWithTimeout(
+        `${NIH_RXNAV_BASE}/rxcui/${encodeURIComponent(resolvedRxcui)}/related.json?tty=IN+MIN`
+      )
+      const conceptGroups = relatedJson?.relatedGroup?.conceptGroup || []
+      for (const group of conceptGroups) {
+        const props = group?.conceptProperties
+        if (Array.isArray(props) && props.length > 0) {
+          if (!ingredientRxcui) {
             ingredientRxcui = String(props[0].rxcui)
-            if (props[0].name) {
-              ingredientName = props[0].name
-            }
-            break
           }
+          if (props[0].name && (group.tty === 'IN' || !ingredientName)) {
+            ingredientName = props[0].name
+          }
+          props.forEach((prop) => {
+            if (prop?.name) {
+              prop.name
+                .split(/[/,]/)
+                .map((s) => s.trim().toLowerCase())
+                .filter((s) => s.length >= 3)
+                .forEach((p) => ingredientsSet.add(p))
+            }
+          })
         }
       }
+
+      // 5. Resolve NIH RxClass pharmacological classes (ATC / EPC / VA) for universal class mapping
+      const classTargetRxcui = ingredientRxcui || resolvedRxcui
+      const rxClassJson = await fetchJsonWithTimeout(
+        `${NIH_RXNAV_BASE}/rxclass/class/byRxcui.json?rxcui=${encodeURIComponent(classTargetRxcui)}`
+      )
+      const classInfos = rxClassJson?.rxclassMinConceptList?.rxclassMinConcept || []
+      classInfos.forEach((cls) => {
+        if (cls?.className) {
+          rxClassesSet.add(cls.className.toLowerCase())
+        }
+      })
     }
   } catch (err) {
     console.warn('NIH RxNav RxCUI resolution error:', err.message)
@@ -207,9 +254,11 @@ export async function resolveDrugRxCui(medInput) {
     rxcui: resolvedRxcui || ingredientRxcui || null,
     ingredientRxcui: ingredientRxcui || resolvedRxcui || null,
     ingredientName: ingredientName || baseIngredient || rawName,
+    ingredients: [...ingredientsSet],
+    rxClasses: [...rxClassesSet],
   }
 
-  if (finalResult.rxcui) {
+  if (finalResult.rxcui || finalResult.ingredients.length > 0) {
     rxcuiCache.set(cacheKey, finalResult)
   }
 

@@ -658,6 +658,7 @@ export default function PatientDashboard() {
               user={user}
               profile={profile}
               patientData={patientData}
+              activePrescriptions={prescriptions}
               onProfileSaved={async () => {
                 await refreshProfile()
                 await loadPatientData()

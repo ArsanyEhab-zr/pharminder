@@ -6,6 +6,7 @@ import { parseClinicalIntake, serializeClinicalIntake } from '../../utils/patien
 import DynamicTagInput from '../common/DynamicTagInput'
 import GlobalDrugAutocomplete from '../common/GlobalDrugAutocomplete'
 import { upsertMedicationWithRxCui } from '../../utils/globalDrugApi'
+import { verifyLiveDrugInteractions } from '../../utils/interactionChecker'
 import {
   User,
   HeartPulse,
@@ -132,6 +133,7 @@ export default function PatientMedicalProfileForm({
   user,
   profile,
   patientData,
+  activePrescriptions = [],
   onProfileSaved,
 }) {
   const { t } = useTranslation()
@@ -170,13 +172,17 @@ export default function PatientMedicalProfileForm({
     parsedIntake.currentSymptoms || ''
   )
 
-  // 4. Allergies, Global Drug Search & Family History State (Strictly isolated per patient)
+  // 4. Allergies, Global Drug Search, Home Meds & Family History State (Strictly isolated per patient)
   const [selectedAllergies, setSelectedAllergies] = useState(
     Array.isArray(parsedIntake.allergyTags) ? parsedIntake.allergyTags : []
+  )
+  const [homeMeds, setHomeMeds] = useState(
+    Array.isArray(parsedIntake.homeMedTags) ? parsedIntake.homeMedTags : []
   )
   const [globalSearchMode, setGlobalSearchMode] = useState('allergy') // 'allergy' | 'home_med'
   const [addingHomeMed, setAddingHomeMed] = useState(false)
   const [homeMedFeedback, setHomeMedFeedback] = useState('')
+  const [homeMedSafetyWarning, setHomeMedSafetyWarning] = useState(null)
   const [familyHistory, setFamilyHistory] = useState(
     parsedIntake.familyHistory || ''
   )
@@ -206,6 +212,8 @@ export default function PatientMedicalProfileForm({
       setSelectedSymptoms(Array.isArray(intake.symptomTags) ? intake.symptomTags : [])
       setCustomSymptomNotes(intake.currentSymptoms || '')
       setSelectedAllergies(Array.isArray(intake.allergyTags) ? intake.allergyTags : [])
+      setHomeMeds(Array.isArray(intake.homeMedTags) ? intake.homeMedTags : [])
+      setHomeMedSafetyWarning(null)
       setFamilyHistory(intake.familyHistory || '')
     } else {
       // Explicitly reset all medical fields if patient has no record yet
@@ -219,6 +227,8 @@ export default function PatientMedicalProfileForm({
       setSelectedSymptoms([])
       setCustomSymptomNotes('')
       setSelectedAllergies([])
+      setHomeMeds([])
+      setHomeMedSafetyWarning(null)
       setFamilyHistory('')
     }
   }, [user?.id, profile, patientData])
@@ -262,7 +272,29 @@ export default function PatientMedicalProfileForm({
       return
     }
 
-    // If 'home_med' mode: add this global medication directly to the patient's active medications in Supabase!
+    // If 'home_med' mode: add to local homeMeds, run 3-Layer DDI check, and sync to Supabase!
+    const nextHomeMeds = homeMeds.some((m) => m.toLowerCase() === medName.toLowerCase())
+      ? homeMeds
+      : [...homeMeds, medName]
+    setHomeMeds(nextHomeMeds)
+
+    try {
+      const safetyResult = await verifyLiveDrugInteractions(
+        globalMedObj,
+        activePrescriptions,
+        chronicDiseases,
+        selectedAllergies,
+        homeMeds
+      )
+      if (safetyResult && (safetyResult.severity === 'Red' || safetyResult.severity === 'Yellow')) {
+        setHomeMedSafetyWarning(safetyResult)
+      } else {
+        setHomeMedSafetyWarning(null)
+      }
+    } catch (ddiErr) {
+      console.warn('Patient self-check DDI error:', ddiErr)
+    }
+
     if (!user?.id) return
     try {
       setAddingHomeMed(true)
@@ -310,7 +342,7 @@ export default function PatientMedicalProfileForm({
       }
     } catch (err) {
       console.error('Failed to add patient global medication:', err)
-      setHomeMedFeedback('Added to profile notes.')
+      setHomeMedFeedback(`Added "${medName}" to your Home Medications — click Save Profile to confirm sync with your Doctor.`)
     } finally {
       setAddingHomeMed(false)
       setTimeout(() => setHomeMedFeedback(''), 5000)
@@ -352,6 +384,7 @@ export default function PatientMedicalProfileForm({
       const serializedIntake = serializeClinicalIntake({
         currentSymptoms: combinedSymptoms,
         allergies: combinedAllergies,
+        homeMeds: homeMeds.join(', '),
         bloodType,
         emergencyContact,
         familyHistory,
@@ -931,6 +964,67 @@ export default function PatientMedicalProfileForm({
                     <CheckCircle2 className="w-3.5 h-3.5 text-brand-mint" />
                     <span>{homeMedFeedback}</span>
                   </p>
+                )}
+
+                {homeMeds.length > 0 && (
+                  <div className="pt-2 space-y-1.5">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                      Reported Outside / Home Medications ({homeMeds.length})
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {homeMeds.map((med) => (
+                        <span
+                          key={med}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-brand-teal/10 dark:bg-mint-500/15 text-brand-teal dark:text-mint-200 text-xs font-bold border border-brand-teal/20 dark:border-mint-500/30"
+                        >
+                          <Pill className="w-3 h-3" />
+                          <span>{med}</span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setHomeMeds((prev) => prev.filter((item) => item !== med))
+                            }
+                            aria-label={`Remove ${med}`}
+                            className="ml-0.5 text-xs font-extrabold hover:text-rose-600 dark:hover:text-rose-400"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {homeMedSafetyWarning && (
+                  <div
+                    className={`mt-2 p-3 rounded-xl border text-xs ${
+                      homeMedSafetyWarning.severity === 'Red'
+                        ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-700 text-rose-900 dark:text-rose-100'
+                        : 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-100'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2 font-extrabold">
+                      <span className="flex items-center gap-1.5">
+                        <AlertTriangle className="w-4 h-4 shrink-0" />
+                        <span>
+                          {homeMedSafetyWarning.severity === 'Red'
+                            ? 'CRITICAL MEDICATION INTERACTION ALERT'
+                            : 'MODERATE MEDICATION PRECAUTION'}
+                        </span>
+                      </span>
+                      {homeMedSafetyWarning.riskPercentage > 0 && (
+                        <span className="px-2 py-0.5 rounded-full bg-white/80 dark:bg-slate-900/70 text-[10px] font-black">
+                          Risk {homeMedSafetyWarning.riskPercentage}%
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 leading-relaxed">{homeMedSafetyWarning.summary}</p>
+                    {homeMedSafetyWarning.conflicts?.[0]?.clinicalAdvice && (
+                      <p className="mt-1 font-semibold opacity-90">
+                        Guidance: {homeMedSafetyWarning.conflicts[0].clinicalAdvice}
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
 

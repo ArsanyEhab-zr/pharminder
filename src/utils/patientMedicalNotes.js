@@ -9,6 +9,7 @@
 const SECTION_MARKERS = {
   SYMPTOMS: '[SYMPTOMS]:',
   ALLERGIES: '[ALLERGIES]:',
+  HOME_MEDS: '[HOME_MEDS]:',
   BLOOD_TYPE: '[BLOOD_TYPE]:',
   EMERGENCY_CONTACT: '[EMERGENCY_CONTACT]:',
   SMOKING_ALCOHOL: '[LIFESTYLE]:',
@@ -25,6 +26,8 @@ export function parseClinicalIntake(rawFamilyHistory = '') {
     symptomTags: [],
     allergies: '',
     allergyTags: [],
+    homeMeds: '',
+    homeMedTags: [],
     bloodType: 'O+',
     emergencyContact: '',
     lifestyleNotes: 'Non-smoker',
@@ -70,6 +73,7 @@ export function parseClinicalIntake(rawFamilyHistory = '') {
 
   const currentSymptoms = extractSection('SYMPTOMS')
   const allergies = extractSection('ALLERGIES')
+  const homeMeds = extractSection('HOME_MEDS')
   const bloodType = extractSection('BLOOD_TYPE') || 'O+'
   const emergencyContact = extractSection('EMERGENCY_CONTACT')
   const lifestyleNotes = extractSection('SMOKING_ALCOHOL') || 'Non-smoker'
@@ -88,6 +92,8 @@ export function parseClinicalIntake(rawFamilyHistory = '') {
     symptomTags: splitTags(currentSymptoms),
     allergies,
     allergyTags: splitTags(allergies),
+    homeMeds,
+    homeMedTags: splitTags(homeMeds),
     bloodType,
     emergencyContact,
     lifestyleNotes,
@@ -102,6 +108,7 @@ export function parseClinicalIntake(rawFamilyHistory = '') {
 export function serializeClinicalIntake({
   currentSymptoms = '',
   allergies = '',
+  homeMeds = '',
   bloodType = 'O+',
   emergencyContact = '',
   lifestyleNotes = 'Non-smoker',
@@ -114,6 +121,9 @@ export function serializeClinicalIntake({
   }
   if (allergies && allergies.trim()) {
     lines.push(`${SECTION_MARKERS.ALLERGIES} ${allergies.trim()}`)
+  }
+  if (homeMeds && homeMeds.trim()) {
+    lines.push(`${SECTION_MARKERS.HOME_MEDS} ${homeMeds.trim()}`)
   }
   if (bloodType && bloodType.trim()) {
     lines.push(`${SECTION_MARKERS.BLOOD_TYPE} ${bloodType.trim()}`)
