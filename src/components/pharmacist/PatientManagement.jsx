@@ -2,7 +2,13 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 import { supabase, supabaseAdmin } from '../../lib/supabase'
+import { useAuth } from '../../hooks/useAuth'
 import { parseClinicalIntake } from '../../utils/patientMedicalNotes'
+import {
+  fetchLinkedPatientProfiles,
+  lookupPatientByExactCode,
+  linkPatientToDoctor,
+} from '../../utils/doctorRoster'
 import PatientAdherenceModal from './PatientAdherenceModal'
 import { 
   UserPlus, 
@@ -10,14 +16,17 @@ import {
   Activity, 
   Plus, 
   AlertCircle, 
+  AlertTriangle,
   CheckCircle2, 
+  Check,
   Loader2, 
   ChevronRight, 
   FileText,
   Weight,
   Ruler,
   X,
-  Radio
+  Radio,
+  Hash
 } from 'lucide-react'
 
 // Professional Medical SVG Illustration for Empty Patient Registry
@@ -73,9 +82,16 @@ const patientCardVariants = {
 
 export default function PatientManagement({ onSelectPatientForPrescription }) {
   const { t } = useTranslation()
+  const { user, profile } = useAuth()
+  const doctorId = profile?.id || user?.id
   const [patients, setPatients] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
+  const [patientCodeInput, setPatientCodeInput] = useState('')
+  const [lookingUpCode, setLookingUpCode] = useState(false)
+  const [linkingPatient, setLinkingPatient] = useState(false)
+  const [matchedPatient, setMatchedPatient] = useState(null)
+  const [codeLookupMessage, setCodeLookupMessage] = useState({ type: '', text: '' })
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false)
   const [selectedPatientForAdherence, setSelectedPatientForAdherence] = useState(null)
   const [submitting, setSubmitting] = useState(false)
@@ -105,18 +121,12 @@ export default function PatientManagement({ onSelectPatientForPrescription }) {
 
   const fetchPatients = useCallback(async (silent = false) => {
     try {
+      if (!doctorId) return
       if (!silent) setLoading(true)
       const client = supabaseAdmin || supabase
 
-      // 1. Fetch patient profiles strictly filtered by role = 'patient'
-      const { data: profilesData, error: profilesErr } = await client
-        .from('profiles')
-        .select('id, full_name, email, role, created_at')
-        .eq('role', 'patient')
-        .order('created_at', { ascending: false })
-
-      if (profilesErr) throw profilesErr
-      const baseProfiles = profilesData || []
+      // 1. Fetch strictly isolated patient profiles linked to this doctor via doctor_patients
+      const baseProfiles = await fetchLinkedPatientProfiles(doctorId)
       const patientIds = baseProfiles.map((p) => p.id).filter(Boolean)
 
       if (patientIds.length === 0) {
@@ -176,12 +186,12 @@ export default function PatientManagement({ onSelectPatientForPrescription }) {
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [])
+  }, [doctorId])
 
   useEffect(() => {
     fetchPatients(false)
 
-    // Subscribe to realtime updates on patients_data & profiles so saved Patient Medical Forms appear immediately
+    // Subscribe to realtime updates on doctor_patients, patients_data & profiles
     const handleRealtimeRefresh = () => {
       setLiveUpdateBanner(true)
       fetchPatients(true)
@@ -191,6 +201,7 @@ export default function PatientManagement({ onSelectPatientForPrescription }) {
     const realtimeClient = supabaseAdmin || supabase
     const channel = realtimeClient
       .channel('patient-registry-live-sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'doctor_patients' }, handleRealtimeRefresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'patients_data' }, handleRealtimeRefresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, handleRealtimeRefresh)
       .subscribe()
@@ -275,6 +286,11 @@ export default function PatientManagement({ onSelectPatientForPrescription }) {
         console.warn('Patient medical data insert warning:', patientDataError.message)
       }
 
+      // 3. Strictly link the newly created patient to the current doctor's roster
+      if (doctorId) {
+        await linkPatientToDoctor(doctorId, generatedId)
+      }
+
       setFormSuccess(`Patient "${fullName}" successfully registered!`)
       
       // Reset form
@@ -300,19 +316,66 @@ export default function PatientManagement({ onSelectPatientForPrescription }) {
     }
   }
 
-  // Filter patients by search query
+  const handleLookupPatientByCode = async (e) => {
+    e.preventDefault()
+    const cleanCode = patientCodeInput.trim().toUpperCase()
+    setCodeLookupMessage({ type: '', text: '' })
+    setMatchedPatient(null)
+
+    if (!cleanCode) {
+      setCodeLookupMessage({ type: 'error', text: 'Please enter a valid patient ID (e.g., PHM-268297).' })
+      return
+    }
+
+    try {
+      setLookingUpCode(true)
+      const { patient, error } = await lookupPatientByExactCode(cleanCode, doctorId)
+      if (error) throw error
+      if (!patient) {
+        setCodeLookupMessage({ type: 'error', text: `No patient found matching ID "${cleanCode}".` })
+        return
+      }
+      setMatchedPatient(patient)
+    } catch (err) {
+      setCodeLookupMessage({ type: 'error', text: err.message || 'Could not look up patient code.' })
+    } finally {
+      setLookingUpCode(false)
+    }
+  }
+
+  const handleConfirmLinkPatient = async () => {
+    if (!matchedPatient || !doctorId) return
+    try {
+      setLinkingPatient(true)
+      await linkPatientToDoctor(doctorId, matchedPatient.id)
+      setCodeLookupMessage({
+        type: 'success',
+        text: `${matchedPatient.full_name} (${matchedPatient.patient_code}) added to your clinical roster.`,
+      })
+      setMatchedPatient(null)
+      setPatientCodeInput('')
+      await fetchPatients(true)
+    } catch (err) {
+      setCodeLookupMessage({ type: 'error', text: err.message || 'Failed to link patient.' })
+    } finally {
+      setLinkingPatient(false)
+    }
+  }
+
+  // Filter linked patients in real time by Name, Patient Code, Email, or Conditions
   const filteredPatients = patients.filter((p) => {
-    const nameMatch = p.full_name?.toLowerCase().includes(searchQuery.toLowerCase())
-    const emailMatch = p.email?.toLowerCase().includes(searchQuery.toLowerCase())
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return true
+    const nameMatch = p.full_name?.toLowerCase().includes(q)
+    const codeMatch = p.patient_code?.toLowerCase().includes(q)
+    const emailMatch = p.email?.toLowerCase().includes(q)
     const pData = Array.isArray(p.patients_data) ? p.patients_data[0] : p.patients_data
-    const diseaseMatch = pData?.chronic_diseases?.some((d) =>
-      d.toLowerCase().includes(searchQuery.toLowerCase())
-    )
-    return nameMatch || emailMatch || diseaseMatch
+    const diseaseMatch = pData?.chronic_diseases?.some((d) => d.toLowerCase().includes(q))
+    return nameMatch || codeMatch || emailMatch || diseaseMatch
   })
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Header and Action */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -321,7 +384,7 @@ export default function PatientManagement({ onSelectPatientForPrescription }) {
               Clinical Patient Registry
             </h2>
             <span className="text-xs px-3 py-0.5 rounded-full bg-dark-teal-50 text-brand-teal dark:bg-dark-teal-950 dark:text-mint-300 font-extrabold border border-dark-teal-200 dark:border-dark-teal-800 font-tabular shadow-xs">
-              {patients.length} Registered
+              {patients.length} Linked
             </span>
             {liveUpdateBanner && (
               <span className="inline-flex items-center gap-1.5 text-[11px] font-extrabold px-3 py-0.5 rounded-full bg-mint-100 text-mint-900 dark:bg-mint-950 dark:text-mint-300 border border-mint-300 dark:border-mint-700 animate-fade-in">
@@ -331,7 +394,7 @@ export default function PatientManagement({ onSelectPatientForPrescription }) {
             )}
           </div>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-            Review active patient cohorts, chronic disease forms, allergies, and adherence track records
+            Strict roster isolation: view and manage only patients linked to your account
           </p>
         </div>
 
@@ -349,17 +412,111 @@ export default function PatientManagement({ onSelectPatientForPrescription }) {
         </div>
       </div>
 
-      {/* Search Input */}
+      {/* Add Patient by Unique ID Bar */}
+      <div className="p-4 sm:p-5 rounded-3xl bg-white dark:bg-[#0d2232] border border-slate-200/80 dark:border-dark-teal-800/70 shadow-soft-xs space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <Hash className="w-4 h-4 text-brand-mint" />
+              <span>{t('pharmacist.addPatientByCodeTitle')}</span>
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {t('pharmacist.addPatientByCodeSubtitle')}
+            </p>
+          </div>
+        </div>
+
+        <form onSubmit={handleLookupPatientByCode} className="flex flex-col sm:flex-row gap-2.5">
+          <input
+            type="text"
+            dir="ltr"
+            value={patientCodeInput}
+            onChange={(e) => {
+              setPatientCodeInput(e.target.value.toUpperCase())
+              if (matchedPatient) setMatchedPatient(null)
+              if (codeLookupMessage.text) setCodeLookupMessage({ type: '', text: '' })
+            }}
+            placeholder={t('pharmacist.patientCodePlaceholder')}
+            className="flex-1 min-h-[44px] px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-mono font-bold uppercase tracking-wider border border-slate-200 dark:border-dark-teal-800 bg-slate-50 dark:bg-dark-teal-950 text-slate-900 dark:text-slate-100 placeholder:normal-case placeholder:font-sans placeholder:tracking-normal focus:outline-none focus:ring-2 focus:ring-brand-mint"
+          />
+          <button
+            type="submit"
+            disabled={lookingUpCode || !patientCodeInput.trim()}
+            className="min-h-[44px] px-5 py-2.5 rounded-2xl bg-brand-teal hover:bg-dark-teal-900 disabled:opacity-50 text-white text-xs sm:text-sm font-extrabold inline-flex items-center justify-center gap-2 transition-colors cursor-pointer shrink-0"
+          >
+            {lookingUpCode ? (
+              <Loader2 className="w-4 h-4 animate-spin text-brand-mint" />
+            ) : (
+              <Search className="w-4 h-4 text-brand-mint" />
+            )}
+            <span>{t('pharmacist.findPatient')}</span>
+          </button>
+        </form>
+
+        {matchedPatient && (
+          <div className="p-3.5 rounded-2xl bg-mint-50/80 dark:bg-mint-950/60 border border-brand-mint/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="min-w-0">
+              <span className="text-[10px] font-black uppercase tracking-wider text-brand-teal dark:text-mint-300 block">
+                {matchedPatient.already_linked ? 'Already in Your Roster' : 'Patient Verified'}
+              </span>
+              <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                <span className="text-sm font-black text-slate-900 dark:text-slate-100">
+                  {matchedPatient.full_name}
+                </span>
+                <span dir="ltr" className="text-xs font-mono font-black px-2 py-0.5 rounded-lg bg-white dark:bg-dark-teal-950 border border-mint-200 dark:border-mint-800 text-brand-teal dark:text-mint-300">
+                  {matchedPatient.patient_code}
+                </span>
+              </div>
+            </div>
+
+            {!matchedPatient.already_linked ? (
+              <button
+                type="button"
+                onClick={handleConfirmLinkPatient}
+                disabled={linkingPatient}
+                className="min-h-[42px] px-4 py-2 rounded-xl bg-brand-mint text-dark-teal-950 text-xs font-black inline-flex items-center justify-center gap-1.5 hover:brightness-105 cursor-pointer shrink-0 shadow-xs"
+              >
+                {linkingPatient ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+                <span>{t('pharmacist.linkPatient')}</span>
+              </button>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-xs font-extrabold text-brand-teal dark:text-mint-300">
+                <CheckCircle2 className="w-4 h-4 text-brand-mint" />
+                Linked
+              </span>
+            )}
+          </div>
+        )}
+
+        {codeLookupMessage.text && (
+          <div
+            className={`p-3 rounded-2xl text-xs font-bold flex items-center gap-2 ${
+              codeLookupMessage.type === 'success'
+                ? 'bg-mint-50 dark:bg-mint-950/60 text-mint-900 dark:text-mint-200 border border-mint-200 dark:border-mint-800'
+                : 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+            }`}
+          >
+            {codeLookupMessage.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-brand-mint shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+            )}
+            <span>{codeLookupMessage.text}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Search Input (Name or Patient ID) */}
       <div className="relative">
-        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
+        <div className="absolute inset-y-0 start-0 ps-4 flex items-center pointer-events-none text-slate-400">
           <Search className="w-4 h-4" />
         </div>
         <input
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search patients by name, email, or chronic conditions…"
-          className="w-full pl-11 pr-4 py-3 rounded-2xl text-xs sm:text-sm border border-slate-200/80 dark:border-dark-teal-800/80 bg-white dark:bg-[#0d2232] text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-mint shadow-soft-xs transition-all"
+          placeholder={t('pharmacist.searchPatientsPlaceholder')}
+          className="w-full ps-11 pe-4 py-3 rounded-2xl text-xs sm:text-sm border border-slate-200/80 dark:border-dark-teal-800/80 bg-white dark:bg-[#0d2232] text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-mint shadow-soft-xs transition-all"
         />
       </div>
 
@@ -423,9 +580,16 @@ export default function PatientManagement({ onSelectPatientForPrescription }) {
                         {patient.full_name?.charAt(0) || 'P'}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <h4 className="font-black text-base sm:text-lg text-slate-900 dark:text-slate-100 group-hover:text-brand-teal dark:group-hover:text-mint-300 transition-colors leading-snug truncate">
-                          {patient.full_name}
-                        </h4>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="font-black text-base sm:text-lg text-slate-900 dark:text-slate-100 group-hover:text-brand-teal dark:group-hover:text-mint-300 transition-colors leading-snug truncate">
+                            {patient.full_name}
+                          </h4>
+                          {patient.patient_code && (
+                            <span dir="ltr" className="text-[11px] font-mono font-black px-2 py-0.5 rounded-lg bg-dark-teal-50 dark:bg-dark-teal-950 text-brand-teal dark:text-mint-300 border border-dark-teal-200 dark:border-dark-teal-800 shrink-0">
+                              ID: {patient.patient_code}
+                            </span>
+                          )}
+                        </div>
                         <p className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-full font-medium" title={patient.email}>
                           {patient.email || 'No email provided'}
                         </p>
@@ -511,8 +675,9 @@ export default function PatientManagement({ onSelectPatientForPrescription }) {
                           <span className="text-[10px] font-black uppercase tracking-wider text-rose-600 dark:text-rose-400 shrink-0 mt-0.5">
                             Allergies:
                           </span>
-                          <span className="font-bold text-rose-700 dark:text-rose-300 leading-snug break-words flex-1 min-w-0">
-                            ⚠️ {intake.allergies}
+                          <span className="inline-flex items-start gap-1 font-bold text-rose-700 dark:text-rose-300 leading-snug break-words flex-1 min-w-0">
+                            <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0 mt-0.5" />
+                            <span>{intake.allergies}</span>
                           </span>
                         </div>
                       )}
@@ -724,13 +889,14 @@ export default function PatientManagement({ onSelectPatientForPrescription }) {
                           if (isSelected) handleRemoveDisease(disease)
                           else handleAddDisease(disease)
                         }}
-                        className={`text-xs px-3 py-1.5 rounded-xl border transition-all cursor-pointer font-bold ${
+                        className={`inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-xl border transition-all cursor-pointer font-bold ${
                           isSelected
                             ? 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-800 shadow-xs'
                             : 'bg-slate-50 dark:bg-dark-teal-950 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-dark-teal-800 hover:bg-slate-100 dark:hover:bg-dark-teal-900'
                         }`}
                       >
-                        {isSelected ? '✓ ' : '+ '}{disease}
+                        {isSelected ? <Check className="w-3.5 h-3.5 shrink-0" /> : <Plus className="w-3.5 h-3.5 shrink-0" />}
+                        <span>{disease}</span>
                       </button>
                     )
                   })}

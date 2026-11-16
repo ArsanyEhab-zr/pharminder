@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 import { supabase, supabaseAdmin } from '../../lib/supabase'
+import { useAuth } from '../../hooks/useAuth'
+import { fetchLinkedPatientProfiles } from '../../utils/doctorRoster'
 import {
   verifyLiveDrugInteractions,
   checkMultiDrugCombination,
@@ -25,6 +28,7 @@ import {
   Loader2,
   ShieldCheck,
   ShieldAlert,
+  OctagonAlert,
   AlertTriangle,
   Ban,
   Info,
@@ -36,6 +40,9 @@ import {
   Hash,
   X,
   Activity,
+  Zap,
+  ChevronDown,
+  Lightbulb,
 } from 'lucide-react'
 
 const createEmptyDdiResult = () => ({
@@ -62,6 +69,8 @@ export default function PrescribeMedication({
   onPrescriptionSuccess,
 }) {
   const { t } = useTranslation()
+  const { user, profile } = useAuth()
+  const doctorId = profile?.id || user?.id
   const [patients, setPatients] = useState([])
   const [medications, setMedications] = useState([])
   const [loadingInitial, setLoadingInitial] = useState(true)
@@ -105,6 +114,8 @@ export default function PrescribeMedication({
   const [ddiResult, setDdiResult] = useState(createEmptyDdiResult)
   const [acknowledgeModerateRisk, setAcknowledgeModerateRisk] = useState(false)
   const [showHardLockModal, setShowHardLockModal] = useState(false)
+  const [showInlineClinicalDetails, setShowInlineClinicalDetails] = useState(false)
+  const [showModalClinicalDetails, setShowModalClinicalDetails] = useState(false)
 
   // PDR.net Modal Inspection State
   const [inspectedPdrMedName, setInspectedPdrMedName] = useState(null)
@@ -133,24 +144,18 @@ export default function PrescribeMedication({
     { label: 'Custom', value: 'custom' },
   ]
 
-  // Load Patients and Previously Prescribed Medications from Supabase
+  // Load strictly linked doctor_patients roster and Previously Prescribed Medications from Supabase
   useEffect(() => {
     const loadData = async () => {
       try {
         setLoadingInitial(true)
         const client = supabaseAdmin || supabase
 
-        // 1. Fetch Patients strictly filtered by role = 'patient'
-        const { data: patientsData, error: patientsErr } = await client
-          .from('profiles')
-          .select('id, full_name, email, role')
-          .eq('role', 'patient')
-          .order('full_name')
-
-        if (patientsErr) throw patientsErr
-        const isolatedPatients = (patientsData || []).filter(
-          (p) => p.role === 'patient'
-        )
+        // 1. Fetch strictly isolated Patients linked to logged-in doctor via doctor_patients
+        const linkedPatients = doctorId ? await fetchLinkedPatientProfiles(doctorId) : []
+        const isolatedPatients = linkedPatients
+          .filter((p) => p.role === 'patient')
+          .sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''))
         setPatients(isolatedPatients)
 
         // 2. Fetch existing Medications from Supabase
@@ -166,10 +171,12 @@ export default function PrescribeMedication({
         }))
         setMedications(enrichedMeds)
 
-        if (preselectedPatient?.id) {
+        if (preselectedPatient?.id && isolatedPatients.some((p) => p.id === preselectedPatient.id)) {
           setSelectedPatientId(preselectedPatient.id)
         } else if (isolatedPatients.length > 0) {
           setSelectedPatientId(isolatedPatients[0].id)
+        } else {
+          setSelectedPatientId('')
         }
       } catch (err) {
         console.error('Error loading prescription dependencies:', err)
@@ -180,7 +187,7 @@ export default function PrescribeMedication({
     }
 
     loadData()
-  }, [preselectedPatient?.id])
+  }, [preselectedPatient?.id, doctorId])
 
   // Load selected patient's active prescriptions & latest medical form whenever selectedPatientId changes
   useEffect(() => {
@@ -778,11 +785,11 @@ export default function PrescribeMedication({
                 className="w-full px-4 py-3 rounded-2xl text-xs sm:text-sm border border-slate-200 dark:border-dark-teal-800 bg-slate-50 dark:bg-dark-teal-950 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-mint font-semibold shadow-inner"
               >
                 {patients.length === 0 ? (
-                  <option value="">No patients registered yet</option>
+                  <option value="">No linked patients yet — add a patient by ID in Tab 1</option>
                 ) : (
                   patients.map((pat) => (
                     <option key={pat.id} value={pat.id}>
-                      {pat.full_name} ({pat.email || 'No email'})
+                      {pat.full_name} {pat.patient_code ? `(${pat.patient_code})` : `(${pat.email || 'No ID'})`}
                     </option>
                   ))
                 )}
@@ -881,172 +888,214 @@ export default function PrescribeMedication({
                 <>
                   {/* HIGH / MAJOR INTERACTION -> HARD LOCK RED ALERT */}
                   {isHardLocked && (
-                    <div className="p-5 sm:p-6 rounded-2xl bg-rose-50/95 dark:bg-rose-950/80 border-2 border-rose-500 dark:border-rose-700 shadow-soft-lg shadow-rose-500/15 space-y-4 animate-fade-in">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-start gap-3.5">
-                          <div className="w-11 h-11 rounded-2xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-md">
-                            <Ban className="w-6 h-6 stroke-[2.5]" />
-                          </div>
-                          <div>
-                            <div className="flex flex-wrap items-center gap-2">
+                    <motion.div
+                      initial={{ opacity: 0, x: 0 }}
+                      animate={{ opacity: 1, x: [0, -8, 8, -5, 5, -2, 2, 0] }}
+                      transition={{ duration: 0.45 }}
+                      className="p-4 sm:p-5 rounded-2xl bg-rose-50/95 dark:bg-rose-950/80 border-2 border-rose-500 dark:border-rose-700 ring-4 ring-red-500/20 shadow-soft-lg space-y-3"
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                        <div className="flex items-start gap-3 min-w-0">
+                          <motion.div
+                            animate={{ scale: [1, 1.1, 1] }}
+                            transition={{ repeat: Infinity, duration: 1.6 }}
+                            className="w-11 h-11 rounded-2xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-md"
+                          >
+                            <OctagonAlert className="w-6 h-6 stroke-[2.5]" />
+                          </motion.div>
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-1.5">
                               <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-md bg-rose-600 text-white">
-                                {ddiResult.riskLabel ||
-                                  `CRITICAL LETHAL RISK (${ddiResult.riskPercentage || 95}%) — HARD LOCK ACTIVE`}
+                                {ddiResult.riskPercentage || 95}% Critical Risk — Hard Lock
                               </span>
-                              <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-md bg-rose-200 dark:bg-rose-900 text-rose-950 dark:text-rose-200">
-                                {ddiResult.interactions?.[0]?.type ||
-                                  'Contraindicated Interaction'}
-                              </span>
-                              {ddiResult.layerUsed && (
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white/80 dark:bg-slate-900/70 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
-                                  {ddiResult.layerUsed}
+                              {interactions[0]?.type && (
+                                <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-md bg-rose-200 dark:bg-rose-900 text-rose-950 dark:text-rose-200">
+                                  {interactions[0].type}
                                 </span>
                               )}
                             </div>
-                            <h4 className="font-black text-base sm:text-lg text-rose-950 dark:text-rose-100 mt-1">
+                            <h4 className="font-black text-sm sm:text-base text-rose-950 dark:text-rose-100 mt-1 break-words">
                               {ddiResult.title}
                             </h4>
-                            {ddiResult.resolvedIngredient && (
-                              <p className="text-[11px] font-bold text-rose-800 dark:text-rose-300 mt-0.5">
-                                Resolved Generic Ingredient:{' '}
-                                <span className="uppercase">{ddiResult.resolvedIngredient}</span>
-                              </p>
+                            {interactions[0] && (
+                              <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs font-black text-rose-950 dark:text-rose-100">
+                                <span className="px-2 py-0.5 rounded-md bg-white dark:bg-rose-900/70 border border-rose-200 dark:border-rose-700">
+                                  {interactions[0].drugA}
+                                </span>
+                                <Zap className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                                <span className="px-2 py-0.5 rounded-md bg-white dark:bg-rose-900/70 border border-rose-200 dark:border-rose-700">
+                                  {interactions[0].drugB}
+                                </span>
+                              </div>
                             )}
+                            <p className="mt-2 text-xs text-slate-800 dark:text-slate-200 font-semibold leading-relaxed line-clamp-2">
+                              {interactions[0]?.clinicalAdvice || interactions[0]?.description || ddiResult.description}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex sm:flex-col items-stretch gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowModalClinicalDetails(false)
+                              setShowHardLockModal(true)
+                            }}
+                            className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-black shadow-xs transition-colors cursor-pointer"
+                          >
+                            View Alert Modal
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setShowInlineClinicalDetails((v) => !v)}
+                            className="min-h-[36px] px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-700 text-rose-800 dark:text-rose-200 text-[11px] font-extrabold inline-flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            <span>
+                              {showInlineClinicalDetails
+                                ? t('pharmacist.clinicalMechanismHide')
+                                : t('pharmacist.clinicalMechanismToggle')}
+                            </span>
+                            <ChevronDown
+                              className={`w-3.5 h-3.5 transition-transform ${
+                                showInlineClinicalDetails ? 'rotate-180' : ''
+                              }`}
+                            />
+                          </button>
+                        </div>
+                      </div>
+
+                      <AnimatePresence>
+                        {showInlineClinicalDetails && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="overflow-hidden space-y-2.5 pt-2 border-t border-rose-200/80 dark:border-rose-800/70"
+                          >
+                            {interactions.map((item, idx) => (
+                              <div
+                                key={idx}
+                                className="p-3.5 rounded-xl bg-white/95 dark:bg-[#091824]/95 border border-rose-300 dark:border-rose-800 space-y-2 text-xs"
+                              >
+                                <div className="flex flex-wrap items-center justify-between gap-2 font-black text-rose-950 dark:text-rose-100">
+                                  <span className="inline-flex items-center gap-1.5">
+                                    <span>{item.drugA}</span>
+                                    <Zap className="w-3.5 h-3.5 text-rose-600" />
+                                    <span>{item.drugB}</span>
+                                  </span>
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-600 text-white">
+                                    {item.riskLabel || `${item.rxNavSeverity || 'High'} (${item.riskPercentage || 95}%)`}
+                                  </span>
+                                </div>
+                                <p className="text-slate-800 dark:text-slate-200 leading-relaxed font-medium">
+                                  {item.description}
+                                </p>
+                                {item.clinicalAdvice && (
+                                  <p className="p-2 rounded-lg bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-950 dark:text-rose-100 font-semibold">
+                                    {item.clinicalAdvice}
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+
+                            {ddiResult.queriedRxcuis?.length > 0 && (
+                              <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-rose-800 dark:text-rose-300 bg-rose-100/70 dark:bg-rose-900/40 px-3 py-2 rounded-xl">
+                                <span>RxNav Query: rxcuis={ddiResult.queriedRxcuis.join('+')}</span>
+                                <span className="inline-flex items-center gap-1 font-sans font-black uppercase">
+                                  <Ban className="w-3.5 h-3.5" />
+                                  Prescribing Hard-Locked
+                                </span>
+                              </div>
+                            )}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </motion.div>
+                  )}
+
+                  {/* MODERATE / YELLOW INTERACTION -> REQUIRES RISK ACKNOWLEDGMENT CHECKBOX */}
+                  {ddiResult.severity === 'Yellow' && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="p-4 sm:p-5 rounded-2xl bg-amber-50/95 dark:bg-amber-950/60 border-2 border-amber-400 dark:border-amber-700 shadow-soft-md space-y-3"
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                        <div className="flex items-start gap-3 min-w-0">
+                          <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm">
+                            <AlertTriangle className="w-5 h-5 stroke-[2.5]" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-md bg-amber-500 text-white">
+                                {ddiResult.riskPercentage || 60}% Moderate Precaution
+                              </span>
+                              <span className="text-[10px] font-bold text-amber-900 dark:text-amber-300">
+                                Override Requires Acknowledgment
+                              </span>
+                            </div>
+                            <h4 className="font-black text-sm sm:text-base text-amber-950 dark:text-amber-100 mt-1 break-words">
+                              {ddiResult.title}
+                            </h4>
+                            <p className="mt-1 text-xs text-slate-800 dark:text-slate-200 leading-relaxed font-medium line-clamp-2">
+                              {interactions[0]?.clinicalAdvice || interactions[0]?.description}
+                            </p>
                           </div>
                         </div>
 
                         <button
                           type="button"
-                          onClick={() => setShowHardLockModal(true)}
-                          className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-black shrink-0 shadow-xs transition-colors cursor-pointer"
+                          onClick={() => setShowInlineClinicalDetails((v) => !v)}
+                          className="min-h-[36px] px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 text-[11px] font-extrabold inline-flex items-center justify-center gap-1 cursor-pointer shrink-0"
                         >
-                          View Full Scientific Proof
+                          <span>
+                            {showInlineClinicalDetails
+                              ? t('pharmacist.clinicalMechanismHide')
+                              : t('pharmacist.clinicalMechanismToggle')}
+                          </span>
+                          <ChevronDown
+                            className={`w-3.5 h-3.5 transition-transform ${
+                              showInlineClinicalDetails ? 'rotate-180' : ''
+                            }`}
+                          />
                         </button>
                       </div>
 
-                      {/* Specific Conflicting Drugs & Scientific Mechanism Proof */}
-                      <div className="space-y-2.5">
-                        {interactions.map((item, idx) => (
-                          <div
-                            key={idx}
-                            className="p-4 rounded-xl bg-white/95 dark:bg-[#091824]/95 border-2 border-rose-300 dark:border-rose-800 space-y-2.5 shadow-xs"
+                      <AnimatePresence>
+                        {showInlineClinicalDetails && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="overflow-hidden space-y-2 pt-2 border-t border-amber-200 dark:border-amber-800"
                           >
-                            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rose-100 dark:border-rose-900/60 pb-2">
-                              <div className="flex flex-wrap items-center gap-1.5 text-xs font-black text-rose-950 dark:text-rose-100">
-                                <span className="px-2 py-0.5 rounded-md bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-200">
-                                  {item.drugA}
-                                </span>
-                                <span className="text-rose-600 font-black">
-                                  ⚡ CONFLICTS WITH ⚡
-                                </span>
-                                <span className="px-2 py-0.5 rounded-md bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-200">
-                                  {item.drugB}
-                                </span>
-                              </div>
-                              <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-rose-600 text-white">
-                                {item.riskLabel ||
-                                  `Severity: ${item.rxNavSeverity || 'High'} (${item.riskPercentage || 95}%)`}
-                              </span>
-                            </div>
-
-                            <div className="space-y-1">
-                              <span className="text-[10px] font-black uppercase tracking-wider text-rose-700 dark:text-rose-400 block">
-                                Scientific Mechanism &amp; Clinical Proof:
-                              </span>
-                              <p className="text-xs sm:text-sm text-slate-900 dark:text-slate-100 leading-relaxed font-semibold">
-                                {item.description}
-                              </p>
-                            </div>
-
-                            {item.clinicalAdvice && (
-                              <div className="p-2.5 rounded-lg bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800/70">
-                                <span className="text-[10px] font-black uppercase tracking-wider text-rose-800 dark:text-rose-300 block">
-                                  Clinical Management &amp; Alternative Advice:
-                                </span>
-                                <p className="text-xs text-rose-950 dark:text-rose-100 font-semibold mt-0.5">
-                                  {item.clinicalAdvice}
+                            {interactions.map((item, idx) => (
+                              <div
+                                key={idx}
+                                className="p-3 rounded-xl bg-white/95 dark:bg-[#091824]/95 border border-amber-300 dark:border-amber-800 space-y-1.5 text-xs"
+                              >
+                                <div className="flex flex-wrap items-center justify-between gap-2 font-black text-amber-950 dark:text-amber-200">
+                                  <span>{item.drugA} + {item.drugB}</span>
+                                  <span className="text-[10px] uppercase px-2 py-0.5 rounded bg-amber-500 text-white">
+                                    {item.riskLabel || `Moderate (${item.riskPercentage || 60}%)`}
+                                  </span>
+                                </div>
+                                <p className="text-slate-800 dark:text-slate-200 leading-relaxed font-medium">
+                                  {item.description}
                                 </p>
+                                {item.clinicalAdvice && (
+                                  <p className="p-2 rounded-lg bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 text-amber-950 dark:text-amber-100 font-semibold">
+                                    {item.clinicalAdvice}
+                                  </p>
+                                )}
                               </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-
-                      {ddiResult.queriedRxcuis?.length > 0 && (
-                        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-rose-800 dark:text-rose-300 bg-rose-100/70 dark:bg-rose-900/40 px-3 py-2 rounded-xl">
-                          <span>
-                            RxNav Query: rxcuis=
-                            {ddiResult.queriedRxcuis.join('+')}
-                          </span>
-                          <span className="font-sans font-black uppercase">
-                            ⛔ Prescribing Hard-Locked
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* MODERATE / YELLOW INTERACTION -> REQUIRES RISK ACKNOWLEDGMENT CHECKBOX */}
-                  {ddiResult.severity === 'Yellow' && (
-                    <div className="p-5 sm:p-6 rounded-2xl bg-amber-50/95 dark:bg-amber-950/60 border-2 border-amber-400 dark:border-amber-700 shadow-soft-md space-y-4 animate-fade-in">
-                      <div className="flex items-start gap-3.5">
-                        <div className="w-11 h-11 rounded-2xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm">
-                          <AlertTriangle className="w-6 h-6 stroke-[2.5]" />
-                        </div>
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-md bg-amber-500 text-white">
-                              {ddiResult.riskLabel ||
-                                `MODERATE RISK (${ddiResult.riskPercentage || 60}%) — YELLOW ALERT`}
-                            </span>
-                            <span className="text-[10px] font-bold text-amber-900 dark:text-amber-300">
-                              Clinical Override Requires Risk Acknowledgment
-                            </span>
-                            {ddiResult.layerUsed && (
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white/80 dark:bg-slate-900/70 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700">
-                                {ddiResult.layerUsed}
-                              </span>
-                            )}
-                          </div>
-                          <h4 className="font-black text-base text-amber-950 dark:text-amber-100 mt-1">
-                            {ddiResult.title}
-                          </h4>
-                        </div>
-                      </div>
-
-                      {/* Specific Conflicting Drugs & Scientific Proof */}
-                      <div className="space-y-2.5">
-                        {interactions.map((item, idx) => (
-                          <div
-                            key={idx}
-                            className="p-3.5 rounded-xl bg-white/95 dark:bg-[#091824]/95 border border-amber-300 dark:border-amber-800 space-y-2"
-                          >
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <span className="text-xs font-black text-amber-950 dark:text-amber-200">
-                                {item.drugA} + {item.drugB}
-                              </span>
-                              <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-amber-500 text-white">
-                                {item.riskLabel ||
-                                  `Moderate (${item.riskPercentage || 60}%)`}
-                              </span>
-                            </div>
-                            <p className="text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-relaxed font-medium">
-                              {item.description}
-                            </p>
-                            {item.clinicalAdvice && (
-                              <div className="p-2 rounded-lg bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/70 text-xs text-amber-950 dark:text-amber-100 font-semibold">
-                                <span className="font-black uppercase text-[10px] text-amber-800 dark:text-amber-300 block">
-                                  Clinical Management Advice:
-                                </span>
-                                {item.clinicalAdvice}
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
+                            ))}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
 
                       {/* Mandatory Pharmacist Risk Acknowledgment Checkbox */}
-                      <label className="flex items-center gap-3 p-4 rounded-xl bg-amber-100/90 dark:bg-amber-900/50 border-2 border-amber-500 dark:border-amber-600 cursor-pointer select-none transition-all hover:brightness-98">
+                      <label className="flex items-center gap-3 p-3.5 rounded-xl bg-amber-100/90 dark:bg-amber-900/50 border-2 border-amber-500 dark:border-amber-600 cursor-pointer select-none transition-all hover:brightness-98">
                         <input
                           type="checkbox"
                           checked={acknowledgeModerateRisk}
@@ -1064,7 +1113,7 @@ export default function PrescribeMedication({
                           </span>
                         </div>
                       </label>
-                    </div>
+                    </motion.div>
                   )}
 
                   {/* GREEN / VERIFIED SAFE */}
@@ -1127,8 +1176,9 @@ export default function PrescribeMedication({
                           {ddiResult.labInteractions[0].summary}
                         </p>
                         {ddiResult.labInteractions[0].recommendation && (
-                          <p className="text-[11px] text-indigo-800 dark:text-indigo-300 font-semibold">
-                            💡 Recommendation: {ddiResult.labInteractions[0].recommendation}
+                          <p className="inline-flex items-start gap-1.5 text-[11px] text-indigo-800 dark:text-indigo-300 font-semibold">
+                            <Lightbulb className="w-3.5 h-3.5 text-indigo-500 shrink-0 mt-0.5" />
+                            <span>Recommendation: {ddiResult.labInteractions[0].recommendation}</span>
                           </p>
                         )}
                       </div>
@@ -1364,8 +1414,9 @@ export default function PrescribeMedication({
                   <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block mb-1">
                     Documented Drug / Food Allergies:
                   </span>
-                  <p className="p-2.5 rounded-xl bg-slate-50 dark:bg-dark-teal-950 border border-slate-200 dark:border-dark-teal-800 text-slate-800 dark:text-slate-200 font-bold">
-                    ⚠️ {parsedIntake.allergies}
+                  <p className="p-2.5 rounded-xl bg-slate-50 dark:bg-dark-teal-950 border border-slate-200 dark:border-dark-teal-800 text-slate-800 dark:text-slate-200 font-bold flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                    <span>{parsedIntake.allergies}</span>
                   </p>
                 </div>
               )}
@@ -1603,140 +1654,179 @@ export default function PrescribeMedication({
         </div>
       </div>
 
-      {/* UN-IGNORABLE SCIENTIFIC CLINICAL HARD-LOCK MODAL (Auto-opens on High/Major Interaction) */}
-      {showHardLockModal && isHardLocked && (
-        <div
-          className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fade-in"
-          role="alertdialog"
-          aria-modal="true"
-          aria-labelledby="hard-lock-modal-title"
-        >
-          <div className="w-full max-w-2xl rounded-3xl bg-white dark:bg-[#0b1d2a] border-2 border-rose-500 shadow-2xl overflow-hidden my-4 sm:my-8 max-h-[92vh] flex flex-col">
-            {/* Red Alert Header */}
-            <div className="p-4 sm:p-6 bg-gradient-to-r from-rose-600 via-rose-700 to-rose-800 text-white flex items-start justify-between gap-3 shrink-0">
-              <div className="flex items-start gap-3 sm:gap-3.5 min-w-0 flex-1">
-                <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-white/15 border border-white/25 flex items-center justify-center shrink-0">
-                  <Ban className="w-6 h-6 sm:w-7 sm:h-7 text-white stroke-[2.5]" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full bg-white text-rose-700">
-                    <ShieldAlert className="w-3 h-3" />
-                    Clinical Safety Hard-Lock Engaged
-                  </span>
-                  <h3
-                    id="hard-lock-modal-title"
-                    className="text-base sm:text-xl font-black mt-1.5 leading-snug break-words"
+      {/* HIGH-IMPACT MOBILE-RESPONSIVE ANIMATED HARD-LOCK MODAL */}
+      <AnimatePresence>
+        {showHardLockModal && isHardLocked && (
+          <div
+            className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="hard-lock-modal-title"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.94, x: 0 }}
+              animate={{
+                opacity: 1,
+                scale: 1,
+                x: [0, -10, 10, -8, 8, -4, 4, 0],
+              }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              transition={{
+                x: { duration: 0.55, ease: 'easeInOut' },
+                opacity: { duration: 0.2 },
+                scale: { duration: 0.22 },
+              }}
+              className="w-[95vw] max-w-lg max-h-[85dvh] overflow-y-auto rounded-2xl p-4 sm:p-6 bg-white dark:bg-[#0b1d2a] border-2 border-rose-500 ring-4 ring-red-500/30 shadow-2xl space-y-4"
+            >
+              {/* Uncluttered Hazard Header */}
+              <div className="flex items-start justify-between gap-3 pb-3 border-b border-rose-200/70 dark:border-rose-900/60">
+                <div className="flex items-start gap-3 min-w-0 flex-1">
+                  <motion.div
+                    animate={{ scale: [1, 1.12, 1] }}
+                    transition={{ repeat: Infinity, duration: 1.5 }}
+                    className="w-12 h-12 rounded-2xl bg-gradient-to-br from-rose-600 to-red-700 text-white flex items-center justify-center shrink-0 shadow-lg shadow-rose-600/35 ring-4 ring-red-500/25"
                   >
-                    Prescription Blocked: Severe Drug Interaction Detected
-                  </h3>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowHardLockModal(false)}
-                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer shrink-0"
-                aria-label="Close modal to select alternative medication"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Scientific Proof Body */}
-            <div className="p-6 sm:p-7 space-y-5 max-h-[70vh] overflow-y-auto">
-              <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-xs sm:text-sm text-rose-900 dark:text-rose-200 font-semibold leading-relaxed">
-                The Drugs.com &amp; PDR.net Clinical Safety Engine has automatically{' '}
-                <strong>hard-locked</strong> the prescription of{' '}
-                <strong>{selectedMedName}</strong> for{' '}
-                <strong>{selectedPat?.full_name || 'this patient'}</strong> due
-                to the following verified clinical contraindication(s):
-              </div>
-
-              <div className="space-y-4">
-                {interactions.map((item, idx) => (
-                  <div
-                    key={idx}
-                    className="p-5 rounded-2xl bg-slate-50 dark:bg-[#07131d] border-2 border-rose-300 dark:border-rose-800/80 space-y-3"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-[11px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg bg-rose-600 text-white">
-                        {item.riskLabel ||
-                          `Severity: ${item.rxNavSeverity || 'High'} (${item.drugsComCategory || 'Major'} • ${item.riskPercentage || 95}%)`}
+                    <OctagonAlert className="w-7 h-7 stroke-[2.5]" />
+                  </motion.div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-rose-600 text-white">
+                        <ShieldAlert className="w-3 h-3 shrink-0" />
+                        <span>{ddiResult.riskPercentage || 95}% Critical Risk</span>
                       </span>
-                      <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
-                        Source: {item.source || 'Universal 3-Layer Clinical DDI Engine'}
+                      <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                        Hard Lock Active
                       </span>
                     </div>
-
-                    <div>
-                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block mb-1">
-                        Conflicting Agents:
-                      </span>
-                      <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm font-black text-slate-900 dark:text-white">
-                        <span className="px-3 py-1 rounded-xl bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-200 border border-rose-200 dark:border-rose-800">
-                          {item.drugA}
-                        </span>
-                        <span className="text-rose-600 font-black">⚡</span>
-                        <span className="px-3 py-1 rounded-xl bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-200 border border-rose-200 dark:border-rose-800">
-                          {item.drugB}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="pt-1">
-                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-rose-600 dark:text-rose-400 block mb-1">
-                        Exact Scientific Mechanism &amp; Clinical Proof:
-                      </span>
-                      <p className="text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-relaxed font-medium bg-white dark:bg-[#0d2232] p-3.5 rounded-xl border border-slate-200 dark:border-dark-teal-800">
-                        {item.description}
-                      </p>
-                    </div>
-
-                    {item.clinicalAdvice && (
-                      <div className="pt-1">
-                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-rose-700 dark:text-rose-300 block mb-1">
-                          Clinical Management &amp; Safer Alternative Advice:
-                        </span>
-                        <p className="text-xs sm:text-sm text-rose-950 dark:text-rose-100 leading-relaxed font-semibold bg-rose-50 dark:bg-rose-950/60 p-3.5 rounded-xl border border-rose-200 dark:border-rose-800">
-                          {item.clinicalAdvice}
-                        </p>
-                      </div>
-                    )}
+                    <h3
+                      id="hard-lock-modal-title"
+                      className="text-base sm:text-lg font-black text-slate-900 dark:text-white mt-1.5 leading-snug break-words"
+                    >
+                      {ddiResult.title || 'Severe Drug Interaction Blocked'}
+                    </h3>
                   </div>
-                ))}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowHardLockModal(false)}
+                  className="p-2 rounded-xl bg-slate-100 dark:bg-dark-teal-900 hover:bg-slate-200 dark:hover:bg-dark-teal-800 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer shrink-0"
+                  aria-label="Close modal to select alternative medication"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
 
-              {ddiResult.queriedRxcuis?.length > 0 && (
-                <div className="p-3 rounded-xl bg-slate-100 dark:bg-dark-teal-950 text-[11px] font-mono text-slate-600 dark:text-slate-400 flex flex-wrap items-center justify-between gap-2">
-                  <span>
-                    NIH RxNav Endpoint: /REST/interaction/list.json?rxcuis=
-                    {ddiResult.queriedRxcuis.join('+')}
-                  </span>
-                  <span className="font-bold text-rose-600 dark:text-rose-400">
-                    STATUS: LOCKED
-                  </span>
+              {/* Conflicting Pair + Concise 2-Line Clinical Summary */}
+              {interactions[0] && (
+                <div className="p-3.5 rounded-2xl bg-rose-50/90 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 space-y-2.5">
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs sm:text-sm font-black text-slate-900 dark:text-white">
+                    <span className="px-2.5 py-1 rounded-xl bg-white dark:bg-rose-900/70 text-rose-800 dark:text-rose-100 border border-rose-200 dark:border-rose-700">
+                      {interactions[0].drugA}
+                    </span>
+                    <Zap className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span className="px-2.5 py-1 rounded-xl bg-white dark:bg-rose-900/70 text-rose-800 dark:text-rose-100 border border-rose-200 dark:border-rose-700">
+                      {interactions[0].drugB}
+                    </span>
+                  </div>
+
+                  <p className="text-xs sm:text-sm text-rose-950 dark:text-rose-100 font-semibold leading-relaxed line-clamp-2">
+                    {interactions[0].clinicalAdvice || interactions[0].description}
+                  </p>
                 </div>
               )}
-            </div>
 
-            {/* Modal Footer */}
-            <div className="p-5 bg-slate-50 dark:bg-[#07131d] border-t border-slate-200 dark:border-dark-teal-800 flex flex-wrap items-center justify-between gap-3">
-              <span className="text-xs font-bold text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
-                <Lock className="w-4 h-4" />
-                <span>
-                  The Prescribe button will remain locked until a safe medication is selected.
+              {/* Expandable Clinical Mechanism & Lab Interference Accordion */}
+              <div className="rounded-2xl border border-slate-200 dark:border-dark-teal-800 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setShowModalClinicalDetails((v) => !v)}
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-dark-teal-950/80 hover:bg-slate-100 dark:hover:bg-dark-teal-900/70 flex items-center justify-between gap-2 text-xs font-black text-slate-800 dark:text-slate-100 transition-colors cursor-pointer"
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <FlaskConical className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span>التفاصيل العلمية الكاملة / Clinical Mechanism</span>
+                  </span>
+                  <ChevronDown
+                    className={`w-4 h-4 text-slate-500 transition-transform duration-200 ${
+                      showModalClinicalDetails ? 'rotate-180' : ''
+                    }`}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {showModalClinicalDetails && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="overflow-hidden border-t border-slate-200 dark:border-dark-teal-800"
+                    >
+                      <div className="p-3.5 space-y-3 text-xs bg-white dark:bg-[#07131d]">
+                        {interactions.map((item, idx) => (
+                          <div
+                            key={idx}
+                            className="p-3 rounded-xl bg-slate-50 dark:bg-[#0d2232] border border-slate-200 dark:border-dark-teal-800 space-y-1.5"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-1.5 font-black text-rose-700 dark:text-rose-300">
+                              <span>
+                                {item.drugA} + {item.drugB}
+                              </span>
+                              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                                {item.source || 'Universal 3-Layer DDI Engine'}
+                              </span>
+                            </div>
+                            <p className="text-slate-800 dark:text-slate-200 leading-relaxed font-medium">
+                              {item.description}
+                            </p>
+                            {item.clinicalAdvice && (
+                              <p className="text-rose-900 dark:text-rose-200 font-semibold pt-1">
+                                Management: {item.clinicalAdvice}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+
+                        {ddiResult.labInteractions?.length > 0 && (
+                          <div className="p-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 space-y-1">
+                            <span className="font-black text-indigo-900 dark:text-indigo-200 block">
+                              Lab Interference: {ddiResult.labInteractions[0].labTest}
+                            </span>
+                            <p className="text-indigo-800 dark:text-indigo-300">
+                              {ddiResult.labInteractions[0].summary}
+                            </p>
+                          </div>
+                        )}
+
+                        {ddiResult.queriedRxcuis?.length > 0 && (
+                          <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400 pt-1">
+                            RxNav Query: rxcuis={ddiResult.queriedRxcuis.join('+')}
+                          </div>
+                        )}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* Clean Mobile-Friendly Action Footer */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-200 dark:border-dark-teal-800">
+                <span className="text-xs font-bold text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
+                  <Lock className="w-4 h-4 shrink-0" />
+                  <span>Prescribing locked until safe alternative chosen</span>
                 </span>
-              </span>
-              <button
-                type="button"
-                onClick={() => setShowHardLockModal(false)}
-                className="px-5 py-2.5 rounded-xl bg-brand-teal hover:bg-dark-teal-900 text-white text-xs sm:text-sm font-black transition-colors cursor-pointer"
-              >
-                Select Alternative Medication
-              </button>
-            </div>
+                <button
+                  type="button"
+                  onClick={() => setShowHardLockModal(false)}
+                  className="min-h-[44px] px-5 py-2.5 rounded-xl bg-brand-teal hover:bg-dark-teal-900 text-white text-xs sm:text-sm font-black transition-colors cursor-pointer shrink-0"
+                >
+                  Select Alternative Medication
+                </button>
+              </div>
+            </motion.div>
           </div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
 
       {/* Modal PDR.net Drug Summary when clicking any medication in active regimen or full-screen button */}
       {inspectedPdrMedName && (

@@ -18,7 +18,9 @@ import {
   Download,
   Lock,
   HeartPulse,
-  Languages
+  Languages,
+  Copy,
+  Check
 } from 'lucide-react'
 import { getBrandLogo } from '../../utils/brandAssets'
 
@@ -31,8 +33,20 @@ export default function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [deferredPrompt, setDeferredPrompt] = useState(null)
   const [isInstalled, setIsInstalled] = useState(false)
+  const [copiedCode, setCopiedCode] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
+
+  const handleCopyPatientCode = async () => {
+    if (!profile?.patient_code) return
+    try {
+      await navigator.clipboard?.writeText(profile.patient_code)
+      setCopiedCode(true)
+      setTimeout(() => setCopiedCode(false), 2000)
+    } catch {
+      // Fallback ignored if clipboard permissions restricted
+    }
+  }
 
   const toggleLanguage = () => {
     const nextLang = i18n.language === 'ar' ? 'en' : 'ar'
@@ -207,7 +221,7 @@ export default function Navbar() {
               )}
             </button>
 
-            {/* Bilingual Language Switcher (🌐 En / ع) */}
+            {/* Bilingual Language Switcher */}
             <button
               type="button"
               onClick={toggleLanguage}
@@ -227,6 +241,23 @@ export default function Navbar() {
             {/* User Profile / Auth State Badge */}
             {user ? (
               <div className="flex items-center gap-1 sm:gap-2.5 ps-1 sm:ps-2.5 ms-0.5 sm:ms-1 border-s border-slate-200 dark:border-dark-teal-800/60 shrink-0">
+                {role === 'patient' && profile?.patient_code && (
+                  <button
+                    type="button"
+                    onClick={handleCopyPatientCode}
+                    aria-label={t('patient.copyId')}
+                    title={t('patient.copyId')}
+                    className="inline-flex items-center gap-1.5 min-h-[36px] px-2.5 py-1 rounded-xl bg-dark-teal-950 text-white dark:bg-brand-mint dark:text-dark-teal-950 text-[11px] font-mono font-black tracking-wide shadow-xs hover:brightness-110 transition-all cursor-pointer shrink-0"
+                  >
+                    <span className="hidden xl:inline text-[10px] font-sans font-bold opacity-80">ID:</span>
+                    <span dir="ltr">{profile.patient_code}</span>
+                    {copiedCode ? (
+                      <Check className="w-3.5 h-3.5 text-brand-mint dark:text-dark-teal-950 shrink-0" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5 opacity-80 shrink-0" />
+                    )}
+                  </button>
+                )}
                 <div className="hidden lg:flex flex-col text-end leading-tight">
                   <span className="text-xs font-extrabold text-slate-900 dark:text-slate-100 truncate max-w-[130px]">
                     {profile?.full_name || user.email?.split('@')[0]}
@@ -296,14 +327,29 @@ export default function Navbar() {
           <div className="md:hidden py-4 border-t border-slate-200/80 dark:border-dark-teal-800/40 space-y-3 animate-fade-in-up">
             {user ? (
               <div className="px-2 space-y-3">
-                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-dark-teal-950 border border-slate-200/80 dark:border-dark-teal-800 flex items-center justify-between">
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-dark-teal-950 border border-slate-200/80 dark:border-dark-teal-800 flex items-center justify-between gap-2 flex-wrap">
                   <div>
                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 block">
                       Authenticated Session
                     </span>
-                    <span className="text-sm font-black text-slate-900 dark:text-slate-100">
+                    <span className="text-sm font-black text-slate-900 dark:text-slate-100 block">
                       {profile?.full_name || user.email}
                     </span>
+                    {role === 'patient' && profile?.patient_code && (
+                      <button
+                        type="button"
+                        onClick={handleCopyPatientCode}
+                        className="mt-1.5 inline-flex items-center gap-1.5 min-h-[36px] px-3 py-1 rounded-xl bg-dark-teal-950 text-white dark:bg-brand-mint dark:text-dark-teal-950 text-xs font-mono font-black cursor-pointer"
+                      >
+                        <span className="font-sans font-bold text-[10px] opacity-80">ID:</span>
+                        <span dir="ltr">{profile.patient_code}</span>
+                        {copiedCode ? (
+                          <Check className="w-3.5 h-3.5 text-brand-mint dark:text-dark-teal-950" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5 opacity-85" />
+                        )}
+                      </button>
+                    )}
                   </div>
                   <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-lg bg-brand-mint/20 text-brand-teal dark:text-mint-300">
                     {role === 'pharmacist' ? 'Doctor Portal' : 'Patient Portal'}

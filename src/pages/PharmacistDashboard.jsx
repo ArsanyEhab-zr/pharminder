@@ -8,6 +8,7 @@ import DrugInformationPanel from '../components/pharmacist/DrugInformationPanel'
 import Tooltip from '../components/common/Tooltip'
 import { useAuth } from '../hooks/useAuth'
 import { supabase, supabaseAdmin } from '../lib/supabase'
+import { fetchLinkedPatientIds } from '../utils/doctorRoster'
 import { 
   Users, 
   FileText, 
@@ -124,7 +125,8 @@ const listItemVariants = {
 
 export default function PharmacistDashboard() {
   const { t } = useTranslation()
-  const { profile } = useAuth()
+  const { user, profile } = useAuth()
+  const doctorId = profile?.id || user?.id
   const [activeTab, setActiveTab] = useState('patients') // 'patients' | 'prescribe' | 'prescriptions'
   const [preselectedPatient, setPreselectedPatient] = useState(null)
   const [selectedPatientForAudit, setSelectedPatientForAudit] = useState(null)
@@ -143,48 +145,75 @@ export default function PharmacistDashboard() {
 
   const fetchDashboardStats = useCallback(async () => {
     try {
+      if (!doctorId) return
       const client = supabaseAdmin || supabase
 
-      // 1. Count patients
-      const { count: patCount } = await client
-        .from('profiles')
-        .select('*', { count: 'exact', head: true })
-        .eq('role', 'patient')
+      // 1. Strict doctor roster isolation via doctor_patients
+      const linkedIds = await fetchLinkedPatientIds(doctorId)
+      const patCount = linkedIds.length
 
-      // 2. Count active prescriptions
-      const { count: rxCount } = await client
+      if (linkedIds.length === 0) {
+        setStats({
+          totalPatients: 0,
+          activePrescriptions: 0,
+          totalDosesLogged: 0,
+          complianceRate: 100,
+        })
+        return
+      }
+
+      // 2. Fetch linked patients' prescriptions for scoped KPI metrics
+      const { data: rxRows } = await client
         .from('prescriptions')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'active')
+        .select('id, status')
+        .in('patient_id', linkedIds)
 
-      // 3. Count total dose logs and taken count
-      const { count: doseCount } = await client
-        .from('dose_logs')
-        .select('*', { count: 'exact', head: true })
+      const allRxIds = (rxRows || []).map((r) => r.id)
+      const rxCount = (rxRows || []).filter((r) => r.status === 'active').length
 
-      const { count: takenCount } = await client
-        .from('dose_logs')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'taken')
+      // 3. Count dose logs only for linked patients' prescriptions
+      let doseCount = 0
+      let takenCount = 0
+      if (allRxIds.length > 0) {
+        const [{ count: totalLogs }, { count: totalTaken }] = await Promise.all([
+          client
+            .from('dose_logs')
+            .select('*', { count: 'exact', head: true })
+            .in('prescription_id', allRxIds),
+          client
+            .from('dose_logs')
+            .select('*', { count: 'exact', head: true })
+            .in('prescription_id', allRxIds)
+            .eq('status', 'taken'),
+        ])
+        doseCount = totalLogs || 0
+        takenCount = totalTaken || 0
+      }
 
-      const rate = doseCount && doseCount > 0 
-        ? Math.round(((takenCount || 0) / doseCount) * 100)
-        : 100
+      const rate = doseCount > 0 ? Math.round((takenCount / doseCount) * 100) : 100
 
       setStats({
-        totalPatients: patCount || 0,
-        activePrescriptions: rxCount || 0,
-        totalDosesLogged: doseCount || 0,
+        totalPatients: patCount,
+        activePrescriptions: rxCount,
+        totalDosesLogged: doseCount,
         complianceRate: rate,
       })
     } catch (err) {
       console.error('Error fetching pharmacist stats:', err)
     }
-  }, [])
+  }, [doctorId])
 
   const fetchAllPrescriptions = useCallback(async () => {
     try {
+      if (!doctorId) return
       setLoadingPrescriptions(true)
+      const linkedIds = await fetchLinkedPatientIds(doctorId)
+
+      if (linkedIds.length === 0) {
+        setAllPrescriptions([])
+        return
+      }
+
       const client = supabaseAdmin || supabase
       const { data, error } = await client
         .from('prescriptions')
@@ -199,7 +228,8 @@ export default function PharmacistDashboard() {
           patient:patient_id (
             id,
             full_name,
-            email
+            email,
+            patient_code
           ),
           medication:medication_id (
             id,
@@ -208,6 +238,7 @@ export default function PharmacistDashboard() {
             dosage_form
           )
         `)
+        .in('patient_id', linkedIds)
         .order('created_at', { ascending: false })
 
       if (!error && data) {
@@ -218,13 +249,13 @@ export default function PharmacistDashboard() {
     } finally {
       setLoadingPrescriptions(false)
     }
-  }, [])
+  }, [doctorId])
 
   useEffect(() => {
     fetchDashboardStats()
     fetchAllPrescriptions()
 
-    // Live Realtime + Cross-Tab Sync so Patient Form saves reflect immediately without hard refresh
+    // Live Realtime + Cross-Tab Sync so Patient Form saves & roster links reflect immediately
     const triggerSync = () => {
       setLiveSyncPulse(true)
       fetchDashboardStats()
@@ -235,6 +266,7 @@ export default function PharmacistDashboard() {
     const realtimeClient = supabaseAdmin || supabase
     const channel = realtimeClient
       .channel('pharmacist-command-center-sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'doctor_patients' }, triggerSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'patients_data' }, triggerSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, triggerSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'prescriptions' }, triggerSync)
@@ -581,7 +613,7 @@ export default function PharmacistDashboard() {
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 min-w-0">
                       <div className="min-w-0 flex-1 w-full sm:w-auto">
                         <span className="text-[10px] font-black uppercase tracking-widest text-brand-teal dark:text-mint-300 block mb-1 truncate">
-                          Patient: {rx.patient?.full_name || 'Patient'}
+                          Patient: {rx.patient?.full_name || 'Patient'} {rx.patient?.patient_code ? `(${rx.patient.patient_code})` : ''}
                         </span>
                         <button
                           type="button"

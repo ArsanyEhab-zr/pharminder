@@ -840,7 +840,9 @@ export default function PatientAdherenceModal({ patient, onClose, onPrescribeNew
                           </td>
                           <td className="py-3.5 text-right">
                             {isTaken ? (
-                              <span className="text-[11px] text-slate-400 font-semibold font-tabular">Compliant ✓</span>
+                              <span className="inline-flex items-center gap-1 text-[11px] text-slate-400 font-semibold font-tabular">
+                                Compliant <Check className="w-3.5 h-3.5 text-brand-mint" />
+                              </span>
                             ) : (
                               <button
                                 type="button"

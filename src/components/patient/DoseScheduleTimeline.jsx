@@ -3,6 +3,11 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 import { supabase, supabaseAdmin } from '../../lib/supabase'
 import { getDoseStatus, findMatchingLog } from '../../utils/doseStatus'
+import {
+  getEffectiveAlarmTimesForRx,
+  formatHHMMDisplay,
+  buildTodaySlotDate,
+} from '../../utils/alarmSchedules'
 import { 
   CheckCircle2, 
   Clock, 
@@ -32,7 +37,11 @@ const timelineItemVariants = {
   },
 }
 
-export default function DoseScheduleTimeline({ prescriptions = [], onDoseLogged }) {
+export default function DoseScheduleTimeline({
+  prescriptions = [],
+  onDoseLogged,
+  customTimesMap = {},
+}) {
   const { t } = useTranslation()
   const [doseLogs, setDoseLogs] = useState([])
   const [updatingDoseId, setUpdatingDoseId] = useState(null)
@@ -53,46 +62,19 @@ export default function DoseScheduleTimeline({ prescriptions = [], onDoseLogged 
     return todayDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
   }, [todayDate])
 
-  // Generate today's schedule items based on active prescriptions
+  // Generate today's schedule items based on active prescriptions + custom HH:mm times
   const todayScheduleItems = useMemo(() => {
     const items = []
 
     prescriptions.forEach((rx) => {
       const medName = rx.medication?.name || 'Medication'
       const dosage = rx.dosage_instructions || 'Take as prescribed'
-      const freq = (rx.frequency || '').toLowerCase()
+      const hhmmSlots = getEffectiveAlarmTimesForRx(rx, customTimesMap)
 
-      const parseSlotDate = (timeStr) => {
-        const clean = timeStr.replace(' (As Needed)', '').replace(' (Weekly)', '')
-        const [rawTime, modifier] = clean.split(' ')
-        let [hours, minutes] = rawTime.split(':').map(Number)
-        if (modifier === 'PM' && hours !== 12) hours += 12
-        if (modifier === 'AM' && hours === 12) hours = 0
-        const d = new Date(todayDate)
-        d.setHours(hours, minutes || 0, 0, 0)
-        return d
-      }
-
-      let slots = ['08:00 AM']
-      if (freq.includes('8 hour') || freq.includes('3 time') || freq.includes('tid')) {
-        slots = ['08:00 AM', '02:00 PM', '08:00 PM']
-      } else if (freq.includes('12 hour') || freq.includes('2 time') || freq.includes('bid')) {
-        slots = ['08:00 AM', '08:00 PM']
-      } else if (freq.includes('morning')) {
-        slots = ['08:00 AM']
-      } else if (freq.includes('evening') || freq.includes('dinner')) {
-        slots = ['07:00 PM']
-      } else if (freq.includes('bedtime') || freq.includes('night')) {
-        slots = ['10:00 PM']
-      } else if (freq.includes('as needed') || freq.includes('prn')) {
-        slots = ['12:00 PM (As Needed)']
-      } else if (freq.includes('weekly')) {
-        slots = ['09:00 AM (Weekly)']
-      }
-
-      slots.forEach((slotTime, index) => {
-        const slotKey = `${rx.id}-${todayStr}-${index}`
-        const slotDate = parseSlotDate(slotTime)
+      hhmmSlots.forEach((hhmm, index) => {
+        const slotKey = `${rx.id}-${todayStr}-${hhmm}`
+        const slotDate = buildTodaySlotDate(hhmm)
+        const timeDisplay = formatHHMMDisplay(hhmm)
 
         items.push({
           slotKey,
@@ -100,7 +82,8 @@ export default function DoseScheduleTimeline({ prescriptions = [], onDoseLogged 
           medicationName: medName,
           dosageInstructions: dosage,
           dosageForm: rx.medication?.dosage_form || 'Dose',
-          timeDisplay: slotTime,
+          timeDisplay,
+          hhmm,
           timeIndex: index,
           date: todayStr,
           scheduledHours: slotDate.getHours(),
@@ -111,18 +94,8 @@ export default function DoseScheduleTimeline({ prescriptions = [], onDoseLogged 
       })
     })
 
-    return items.sort((a, b) => {
-      const toMinutes = (timeStr) => {
-        const clean = timeStr.replace(' (As Needed)', '').replace(' (Weekly)', '')
-        const [rawTime, modifier] = clean.split(' ')
-        let [hours, minutes] = rawTime.split(':').map(Number)
-        if (modifier === 'PM' && hours !== 12) hours += 12
-        if (modifier === 'AM' && hours === 12) hours = 0
-        return hours * 60 + (minutes || 0)
-      }
-      return toMinutes(a.timeDisplay) - toMinutes(b.timeDisplay)
-    })
-  }, [prescriptions, todayDate, todayStr])
+    return items.sort((a, b) => a.hhmm.localeCompare(b.hhmm))
+  }, [prescriptions, customTimesMap, todayStr])
 
   // Fetch dose logs for today
   const fetchTodayLogs = useCallback(async () => {

@@ -5,6 +5,12 @@ import { supabase, supabaseAdmin } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useMedicationReminders } from '../hooks/useMedicationReminders'
 import { parseClinicalIntake } from '../utils/patientMedicalNotes'
+import {
+  loadAllCustomAlarmTimes,
+  saveCustomAlarmTimes,
+  getEffectiveAlarmTimesForRx,
+  formatHHMMDisplay,
+} from '../utils/alarmSchedules'
 import ActiveMedicationsList from '../components/patient/ActiveMedicationsList'
 import DoseScheduleTimeline from '../components/patient/DoseScheduleTimeline'
 import DoseAlertModal from '../components/patient/DoseAlertModal'
@@ -25,7 +31,9 @@ import {
   Volume2,
   ClipboardList,
   AlertCircle,
-  HelpCircle
+  HelpCircle,
+  Copy,
+  Check
 } from 'lucide-react'
 
 const bentoContainerVariants = {
@@ -56,7 +64,33 @@ export default function PatientDashboard() {
   const [loading, setLoading] = useState(true)
   const [seedingDemo, setSeedingDemo] = useState(false)
   const [statusMessage, setStatusMessage] = useState('')
+  const [copiedCode, setCopiedCode] = useState(false)
+  const [customTimesMap, setCustomTimesMap] = useState(() => loadAllCustomAlarmTimes(user?.id))
   const [nowTimestamp] = useState(() => Date.now())
+
+  useEffect(() => {
+    setCustomTimesMap(loadAllCustomAlarmTimes(user?.id))
+  }, [user?.id])
+
+  const handleUpdateCustomTimes = useCallback(
+    (rxId, times) => {
+      const storageOwnerId = user?.id || 'guest-patient'
+      const nextMap = saveCustomAlarmTimes(storageOwnerId, rxId, times)
+      setCustomTimesMap(nextMap)
+    },
+    [user?.id]
+  )
+
+  const handleCopyPatientCode = async () => {
+    if (!profile?.patient_code) return
+    try {
+      await navigator.clipboard?.writeText(profile.patient_code)
+      setCopiedCode(true)
+      setTimeout(() => setCopiedCode(false), 2000)
+    } catch {
+      // Ignore clipboard restrictions
+    }
+  }
 
   // Interactive 3-Step Guided Tour State
   const [isTourOpen, setIsTourOpen] = useState(() => {
@@ -328,21 +362,38 @@ export default function PatientDashboard() {
 
   const isUsingFallbackDemo = prescriptions.length === 0
 
-  // Medication Reminder & Notification Hook (Web Audio API Chime + Realtime Missed Dose Pings)
+  // Medication Reminder & Notification Hook (Web Audio API Chime + Vibration + SW Notification + Realtime Pings)
   const {
     activeAlertDose,
     isAlarmPlaying,
+    snoozedNotice,
     notificationPermission,
     requestPermission,
     triggerTestReminder,
     stopAlarm,
     handleTakeDoseFromModal,
+    snoozeAlarm,
     dismissModal,
   } = useMedicationReminders({
     prescriptions: displayedPrescriptions,
     onDoseTaken: loadPatientData,
     patientId: user?.id,
+    customTimesMap,
   })
+
+  const nextScheduledDoseLabel = useMemo(() => {
+    const allSlots = []
+    for (const rx of displayedPrescriptions) {
+      const times = getEffectiveAlarmTimesForRx(rx, customTimesMap)
+      allSlots.push(...times)
+    }
+    const sorted = Array.from(new Set(allSlots)).sort()
+    if (sorted.length === 0) return '08:00 AM'
+    const now = new Date()
+    const currentHHMM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+    const upcoming = sorted.find((hhmm) => hhmm >= currentHHMM) || sorted[0]
+    return formatHHMMDisplay(upcoming)
+  }, [displayedPrescriptions, customTimesMap])
 
   const chronicList =
     patientData?.chronic_diseases?.length > 0
@@ -385,6 +436,27 @@ export default function PatientDashboard() {
                   <ShieldCheck className="w-3.5 h-3.5 text-brand-mint shrink-0" />
                   <span>{t('patient.connectedDoctor')}</span>
                 </span>
+                {profile?.patient_code && (
+                  <button
+                    type="button"
+                    onClick={handleCopyPatientCode}
+                    className="inline-flex items-center gap-2 min-h-[34px] text-xs font-mono font-black px-3.5 py-1 rounded-full bg-dark-teal-950 text-white dark:bg-brand-mint dark:text-dark-teal-950 shadow-sm hover:brightness-110 transition-all cursor-pointer"
+                    title={t('patient.copyId')}
+                  >
+                    <span className="font-sans font-bold text-[10px] uppercase tracking-wider opacity-80">
+                      {t('patient.patientIdLabel')}:
+                    </span>
+                    <span dir="ltr">{profile.patient_code}</span>
+                    {copiedCode ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-sans font-extrabold text-brand-mint dark:text-dark-teal-950">
+                        <Check className="w-3.5 h-3.5" />
+                        <span>{t('patient.copiedId')}</span>
+                      </span>
+                    ) : (
+                      <Copy className="w-3.5 h-3.5 opacity-80 shrink-0" />
+                    )}
+                  </button>
+                )}
               </div>
 
               <h1 className="text-xl sm:text-3xl lg:text-4xl font-black tracking-tight text-slate-900 dark:text-slate-100 truncate">
@@ -490,10 +562,22 @@ export default function PatientDashboard() {
           </div>
         </div>
 
-        {statusMessage && (
-          <div className="mt-4 p-3.5 rounded-2xl bg-mint-100/90 dark:bg-mint-950/90 text-mint-900 dark:text-mint-200 text-xs font-bold flex items-center gap-2.5 border border-mint-200 dark:border-mint-800 animate-fade-in shadow-xs">
-            <CheckCircle2 className="w-4 h-4 text-brand-mint shrink-0" />
-            <span>{statusMessage}</span>
+        {(statusMessage || snoozedNotice) && (
+          <div className="mt-4 space-y-2">
+            {statusMessage && (
+              <div className="p-3.5 rounded-2xl bg-mint-100/90 dark:bg-mint-950/90 text-mint-900 dark:text-mint-200 text-xs font-bold flex items-center gap-2.5 border border-mint-200 dark:border-mint-800 animate-fade-in shadow-xs">
+                <CheckCircle2 className="w-4 h-4 text-brand-mint shrink-0" />
+                <span>{statusMessage}</span>
+              </div>
+            )}
+            {snoozedNotice && (
+              <div className="p-3.5 rounded-2xl bg-amber-100/90 dark:bg-amber-950/80 text-amber-950 dark:text-amber-100 text-xs font-bold flex items-center gap-2.5 border border-amber-300 dark:border-amber-800 animate-fade-in shadow-xs">
+                <Clock className="w-4 h-4 text-amber-600 dark:text-amber-300 shrink-0" />
+                <span>
+                  {t('alarm.snoozedNotice')} ({snoozedNotice})
+                </span>
+              </div>
+            )}
           </div>
         )}
       </section>
@@ -513,8 +597,8 @@ export default function PatientDashboard() {
         >
           <div>
             <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-widest">{t('patient.nextDose')}</p>
-            <h3 className="text-2xl sm:text-3xl font-black mt-1.5 text-slate-900 dark:text-slate-100 font-tabular">
-              08:00 AM
+            <h3 dir="ltr" className="text-2xl sm:text-3xl font-black mt-1.5 text-slate-900 dark:text-slate-100 font-tabular">
+              {nextScheduledDoseLabel}
             </h3>
             <p className="text-xs text-brand-mint font-bold mt-1.5 flex items-center gap-1.5">
               <Clock className="w-3.5 h-3.5" /> {t('patient.dailyFollowUp')}
@@ -641,6 +725,7 @@ export default function PatientDashboard() {
             <DoseScheduleTimeline
               prescriptions={displayedPrescriptions}
               onDoseLogged={loadPatientData}
+              customTimesMap={customTimesMap}
             />
           </motion.section>
         )}
@@ -679,6 +764,9 @@ export default function PatientDashboard() {
             <ActiveMedicationsList
               prescriptions={displayedPrescriptions}
               loading={loading}
+              customTimesMap={customTimesMap}
+              onUpdateCustomTimes={handleUpdateCustomTimes}
+              onTriggerAlarmTest={triggerTestReminder}
             />
           </motion.section>
         )}
@@ -690,6 +778,7 @@ export default function PatientDashboard() {
           dose={activeAlertDose}
           isAlarmPlaying={isAlarmPlaying}
           onTakeDose={() => handleTakeDoseFromModal(activeAlertDose)}
+          onSnooze={() => snoozeAlarm(10)}
           onDismiss={dismissModal}
           onStopAlarm={stopAlarm}
         />

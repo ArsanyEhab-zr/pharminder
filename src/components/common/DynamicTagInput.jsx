@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, X, Sparkles, Tag } from 'lucide-react'
+import { Plus, X, Sparkles, Tag, Check, CornerDownLeft } from 'lucide-react'
 
 /**
  * Dynamic Creatable Multi-Select Tag Input
@@ -216,8 +216,8 @@ export default function DynamicTagInput({
                   <span>
                     + Create Custom Tag: &ldquo;{inputValue.trim()}&rdquo;
                   </span>
-                  <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-brand-mint text-dark-teal-950 font-black">
-                    Enter ↵
+                  <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-brand-mint text-dark-teal-950 font-black">
+                    Enter <CornerDownLeft className="w-3 h-3" />
                   </span>
                 </button>
               )}
@@ -245,7 +245,11 @@ export default function DynamicTagInput({
                     isSelected ? theme.chipActive : theme.presetIdle
                   }`}
                 >
-                  <span>{isSelected ? '✓' : '+'}</span>
+                  {isSelected ? (
+                    <Check className="w-3.5 h-3.5 shrink-0" />
+                  ) : (
+                    <Plus className="w-3.5 h-3.5 shrink-0" />
+                  )}
                   <span>{preset}</span>
                 </motion.button>
               )
