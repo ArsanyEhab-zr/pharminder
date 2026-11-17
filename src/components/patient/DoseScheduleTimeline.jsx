@@ -211,18 +211,8 @@ export default function DoseScheduleTimeline({
 
           if (!error && newLog) {
             setDoseLogs((prev) => [...prev, { ...newLog, slot_key: item.slotKey }])
-          } else {
-            setDoseLogs((prev) => [
-              ...prev,
-              {
-                id: `demo-log-${Date.now()}`,
-                prescription_id: item.prescriptionId,
-                scheduled_time: scheduledTimeIso,
-                taken_time: nowIso,
-                status: 'taken',
-                slot_key: item.slotKey,
-              },
-            ])
+          } else if (error) {
+            console.warn('Could not save dose log:', error.message)
           }
         }
       }

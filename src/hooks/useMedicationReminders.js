@@ -144,7 +144,7 @@ export function useMedicationReminders({
         timeDisplay: 'Urgent Care Team Alert',
         scheduledIso: ping.scheduledTime || new Date().toISOString(),
         isCareTeamPing: true,
-        doctorName: ping.doctorName || 'Dr. Sarah Smith, PharmD',
+        doctorName: ping.doctorName || 'Attending Clinician',
         urgentNote: ping.urgentNote || 'Urgent message from your Pharmacist/Doctor: You missed a dose. Please take it immediately.',
         sentAt: ping.timestamp || new Date().toISOString(),
         pingId: ping.pingId,
@@ -239,13 +239,13 @@ export function useMedicationReminders({
   // Manual trigger to verify live chime, vibration, SW notification, and modal immediately
   const triggerTestReminder = useCallback((customDose = null) => {
     const fallbackDose = prescriptions[0] || {
-      id: 'demo-test-rx',
-      dosage_instructions: 'Take 1 capsule by mouth with water',
-      frequency: 'Every 8 hours (3 times daily)',
+      id: null,
+      dosage_instructions: 'Sample test notification (no active prescriptions yet).',
+      frequency: '',
       medication: {
-        name: 'Amoxicillin 500mg',
-        dosage_form: 'Capsule',
-        category: 'Antibiotic',
+        name: 'Medication Alarm Test',
+        dosage_form: 'Reminder Test',
+        category: 'Test',
       },
     }
 
@@ -257,9 +257,9 @@ export function useMedicationReminders({
     const testDoseItem = {
       slotKey: `test-${Date.now()}`,
       prescriptionId: customDose?.prescriptionId || fallbackDose.id,
-      medicationName: customDose?.medicationName || fallbackDose.medication?.name || 'Amoxicillin 500mg',
+      medicationName: customDose?.medicationName || fallbackDose.medication?.name || 'Medication Alarm Test',
       dosageInstructions: customDose?.dosageInstructions || fallbackDose.dosage_instructions,
-      dosageForm: customDose?.dosageForm || fallbackDose.medication?.dosage_form || 'Capsule',
+      dosageForm: customDose?.dosageForm || fallbackDose.medication?.dosage_form || 'Reminder',
       timeDisplay: customDose?.timeDisplay || nowTimeDisplay,
       scheduledIso: new Date().toISOString(),
     }
@@ -274,7 +274,7 @@ export function useMedicationReminders({
     stopAlarm()
     setActiveAlertDose(null)
 
-    if (!dose?.prescriptionId || String(dose.prescriptionId).startsWith('demo-')) {
+    if (!dose?.prescriptionId) {
       if (onDoseTaken) onDoseTaken()
       return
     }

@@ -221,6 +221,7 @@ export default function PharmacistDashboard() {
           id,
           dosage_instructions,
           frequency,
+          scheduled_times,
           start_date,
           end_date,
           status,
@@ -310,7 +311,7 @@ export default function PharmacistDashboard() {
     ? profile.full_name.startsWith('Dr.')
       ? profile.full_name
       : `Dr. ${profile.full_name}`
-    : 'Dr. Sarah Smith, PharmD'
+    : 'Clinician'
 
   return (
     <div className="space-y-6 sm:space-y-8 relative">

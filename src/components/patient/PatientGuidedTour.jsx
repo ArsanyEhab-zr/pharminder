@@ -32,7 +32,7 @@ export const PATIENT_TOUR_STEPS = [
     badge: 'Step 2 of 3 • Your Prescriptions',
     headline: 'Check your Active Medications here',
     description:
-      'Visit "My Active Medications" anytime to inspect all prescriptions authorized by Dr. Sarah Smith, PharmD—complete with dosage instructions, administration frequency, and remaining treatment days.',
+      'Visit "My Active Medications" anytime to inspect all prescriptions authorized by your care team—complete with dosage instructions, administration frequency, custom alarm times, and remaining treatment days.',
     actionLabel: 'Inspect Active Medications',
     tip: 'Pro Tip: New prescriptions issued by your pharmacist appear here automatically without refreshing!',
     icon: Pill,
@@ -46,7 +46,7 @@ export const PATIENT_TOUR_STEPS = [
     description:
       'Follow "Today’s Follow-Up & Schedule" throughout the day. When a scheduled dose time arrives, an audio chime and alert pop-up will remind you. Tap "Mark Dose as Taken" to log your adherence live.',
     actionLabel: 'Go to Today’s Timeline',
-    tip: 'Pro Tip: You can test the audio chime anytime using the "Test Dose Alarm & Chime" button in the header!',
+    tip: 'Pro Tip: You can test the audio chime anytime using the "Test Live Alarm" button in the header!',
     icon: Clock,
     accent: 'from-emerald-500 to-brand-mint',
   },

@@ -134,7 +134,7 @@ export default function DoseAlertModal({
               <div className="space-y-1 flex-1">
                 <span className="text-xs font-extrabold uppercase tracking-wider text-rose-600 dark:text-rose-300 flex items-center gap-1.5">
                   <UserCheck className="w-4 h-4" />
-                  <span>{dose.doctorName || 'Dr. Sarah Smith, PharmD'}</span>
+                  <span>{dose.doctorName || 'Attending Clinician'}</span>
                 </span>
                 <p className="text-sm sm:text-base font-bold leading-snug">
                   {dose.urgentNote ||

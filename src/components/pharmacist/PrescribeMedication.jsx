@@ -14,6 +14,13 @@ import {
   extractRxCui,
 } from '../../utils/globalDrugApi'
 import { parseClinicalIntake } from '../../utils/patientMedicalNotes'
+import {
+  getDefaultTimesForFrequency,
+  formatHHMMDisplay,
+  isValidHHMM,
+  normalizeHHMMArray,
+  buildTodaySlotDate,
+} from '../../utils/alarmSchedules'
 import DrugInformationPanel from './DrugInformationPanel'
 import GlobalDrugAutocomplete from '../common/GlobalDrugAutocomplete'
 import Tooltip from '../common/Tooltip'
@@ -43,6 +50,8 @@ import {
   Zap,
   ChevronDown,
   Lightbulb,
+  Plus,
+  BellRing,
 } from 'lucide-react'
 
 const createEmptyDdiResult = () => ({
@@ -82,6 +91,10 @@ export default function PrescribeMedication({
   const [selectedMedicationId, setSelectedMedicationId] = useState('')
   const [dosageInstructions, setDosageInstructions] = useState('')
   const [frequency, setFrequency] = useState('Every 8 hours (3 times daily)')
+  const [scheduledTimes, setScheduledTimes] = useState(() =>
+    getDefaultTimesForFrequency('Every 8 hours (3 times daily)')
+  )
+  const [newScheduledTime, setNewScheduledTime] = useState('12:00')
   const [startDate, setStartDate] = useState(
     () => new Date().toISOString().split('T')[0]
   )
@@ -228,6 +241,7 @@ export default function PrescribeMedication({
               patient_id,
               dosage_instructions,
               frequency,
+              scheduled_times,
               start_date,
               end_date,
               status,
@@ -571,14 +585,21 @@ export default function PrescribeMedication({
       )
       setSelectedMedicationId(finalMedicationId)
 
-      // 2. Insert into prescriptions
+      const finalScheduledTimes =
+        normalizeHHMMArray(scheduledTimes).length > 0
+          ? normalizeHHMMArray(scheduledTimes)
+          : getDefaultTimesForFrequency(frequency)
+
+      // 2. Insert into prescriptions with persisted scheduled_times array
       const { data: newRx, error: rxErr } = await client
         .from('prescriptions')
         .insert({
           patient_id: selectedPatientId,
+          pharmacist_id: doctorId || null,
           medication_id: finalMedicationId,
           dosage_instructions: dosageInstructions.trim(),
           frequency: frequency,
+          scheduled_times: finalScheduledTimes,
           start_date: startDate,
           end_date: computedEndDate,
           status: 'active',
@@ -587,6 +608,7 @@ export default function PrescribeMedication({
           id,
           dosage_instructions,
           frequency,
+          scheduled_times,
           start_date,
           end_date,
           status,
@@ -602,17 +624,11 @@ export default function PrescribeMedication({
 
       if (rxErr) throw rxErr
 
-      // 3. Generate initial pending dose logs for the first 3 scheduled doses
-      const doseTimes = [
-        new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
-        new Date(Date.now() + 10 * 60 * 60 * 1000).toISOString(),
-        new Date(Date.now() + 18 * 60 * 60 * 1000).toISOString(),
-      ]
-
+      // 3. Generate initial pending dose logs matching persisted scheduled_times
       await client.from('dose_logs').insert(
-        doseTimes.map((t) => ({
+        finalScheduledTimes.map((hhmm) => ({
           prescription_id: newRx.id,
-          scheduled_time: t,
+          scheduled_time: buildTodaySlotDate(hhmm).toISOString(),
           status: 'pending',
         }))
       )
@@ -622,7 +638,7 @@ export default function PrescribeMedication({
           persistedMed.rxcui ? ` (RxCUI: ${persistedMed.rxcui})` : ''
         } to ${
           selectedPat?.full_name || 'patient'
-        }! Synced to Patient Portal.`
+        }! Scheduled times (${finalScheduledTimes.join(', ')}) saved to Supabase.`
       )
 
       const { data: refreshedActive } = await client
@@ -632,6 +648,7 @@ export default function PrescribeMedication({
           patient_id,
           dosage_instructions,
           frequency,
+          scheduled_times,
           start_date,
           end_date,
           status,
@@ -1202,23 +1219,85 @@ export default function PrescribeMedication({
               />
             </div>
 
-            {/* 5. Frequency Selector */}
-            <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                <Clock className="w-4 h-4 text-brand-teal dark:text-mint-300" />
-                {t('pharmacist.frequency')}
-              </label>
-              <select
-                value={frequency}
-                onChange={(e) => setFrequency(e.target.value)}
-                className="w-full px-4 py-3 rounded-2xl text-xs sm:text-sm border border-slate-200 dark:border-dark-teal-800 bg-slate-50 dark:bg-dark-teal-950 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-mint font-semibold shadow-inner"
-              >
-                {frequencyOptions.map((f) => (
-                  <option key={f} value={f}>
-                    {f}
-                  </option>
-                ))}
-              </select>
+            {/* 5. Frequency Selector + Editable Clock Schedule (scheduled_times) */}
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-brand-teal dark:text-mint-300" />
+                  {t('pharmacist.frequency')}
+                </label>
+                <select
+                  value={frequency}
+                  onChange={(e) => {
+                    const nextFreq = e.target.value
+                    setFrequency(nextFreq)
+                    setScheduledTimes(getDefaultTimesForFrequency(nextFreq))
+                  }}
+                  className="w-full px-4 py-3 rounded-2xl text-xs sm:text-sm border border-slate-200 dark:border-dark-teal-800 bg-slate-50 dark:bg-dark-teal-950 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-mint font-semibold shadow-inner"
+                >
+                  {frequencyOptions.map((f) => (
+                    <option key={f} value={f}>
+                      {f}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-dark-teal-950/70 border border-slate-200 dark:border-dark-teal-800 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-brand-teal dark:text-mint-300 inline-flex items-center gap-1.5">
+                    <BellRing className="w-3.5 h-3.5 text-brand-mint" />
+                    <span>{t('alarm.customTimesLabel')} (Persisted to DB)</span>
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap gap-1.5">
+                  {scheduledTimes.map((hhmm) => (
+                    <span
+                      key={hhmm}
+                      dir="ltr"
+                      className="inline-flex items-center gap-1.5 text-xs font-mono font-bold px-2.5 py-1 rounded-xl bg-white dark:bg-[#0d2232] text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-dark-teal-700"
+                    >
+                      <Clock className="w-3 h-3 text-brand-mint" />
+                      <span>{formatHHMMDisplay(hhmm)}</span>
+                      {scheduledTimes.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setScheduledTimes((prev) => prev.filter((item) => item !== hhmm))
+                          }
+                          aria-label={`Remove ${hhmm}`}
+                          className="text-slate-400 hover:text-rose-500 cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </span>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="time"
+                    value={newScheduledTime}
+                    onChange={(e) => setNewScheduledTime(e.target.value)}
+                    className="min-h-[38px] px-3 py-1.5 rounded-xl text-xs font-mono font-bold border border-slate-200 dark:border-dark-teal-700 bg-white dark:bg-[#0d2232] text-slate-900 dark:text-slate-100"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!isValidHHMM(newScheduledTime)) return
+                      setScheduledTimes((prev) =>
+                        normalizeHHMMArray([...prev, newScheduledTime])
+                      )
+                    }}
+                    className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-dark-teal-950 dark:bg-brand-mint text-white dark:text-dark-teal-950 text-xs font-black inline-flex items-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>{t('alarm.addAlarmTime')}</span>
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* 6. Start Date & Duration */}

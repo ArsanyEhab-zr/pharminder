@@ -1,31 +1,33 @@
 import React, { useState } from 'react'
 import { motion } from 'framer-motion'
 import { useAuth } from '../hooks/useAuth'
-import { 
-  Stethoscope, 
-  User, 
-  Mail, 
-  Lock, 
-  Eye, 
-  EyeOff, 
-  ShieldCheck, 
-  ArrowRight, 
-  AlertCircle, 
-  CheckCircle2, 
-  Loader2, 
-  Sparkles,
+import {
+  Stethoscope,
+  User,
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+  ShieldCheck,
+  ArrowRight,
+  AlertCircle,
+  CheckCircle2,
+  Loader2,
   Activity,
-  FileCheck2
+  Award,
+  FileCheck2,
 } from 'lucide-react'
 
 export default function PharmacistLogin({ onSuccess }) {
   const { signIn, signUp, signOut, loading, error: authError } = useAuth()
-  
+
   // 'signin' or 'signup'
   const [authMode, setAuthMode] = useState('signin')
 
   // Form states
   const [fullName, setFullName] = useState('')
+  const [specialty, setSpecialty] = useState('')
+  const [licenseNumber, setLicenseNumber] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -37,12 +39,12 @@ export default function PharmacistLogin({ onSuccess }) {
     setFormError('')
     setFormSuccess('')
 
-    if (!email || !password) {
+    if (!email.trim() || !password) {
       setFormError('Please enter both clinical email and password.')
       return
     }
 
-    if (authMode === 'signup' && !fullName) {
+    if (authMode === 'signup' && !fullName.trim()) {
       setFormError('Please provide your full clinical name and title.')
       return
     }
@@ -60,13 +62,12 @@ export default function PharmacistLogin({ onSuccess }) {
       })
 
       if (error) {
-        setFormError(error.message || 'Failed to sign in. Please verify your clinical credentials.')
+        setFormError(error.message || 'Invalid credentials. Please check your clinical email and password.')
       } else if (data?.user) {
         const userRole = data.user.user_metadata?.role || data.user.role
-        // Strict role validation: Ensure patients cannot enter the clinician portal
         if (userRole === 'patient') {
           await signOut()
-          setFormError('Access restricted: Patient accounts cannot access the Doctor & Pharmacist Command Center.')
+          setFormError('Access restricted: Patient accounts must sign in via the Patient Portal.')
           return
         }
 
@@ -79,12 +80,14 @@ export default function PharmacistLogin({ onSuccess }) {
         password,
         fullName,
         role: 'pharmacist',
+        specialty,
+        licenseNumber,
       })
 
       if (error) {
         setFormError(error.message || 'Failed to register clinician account. Please try again.')
       } else {
-        setFormSuccess('Clinician account created successfully! Redirecting…')
+        setFormSuccess('Clinician account registered! Opening your isolated Command Center…')
         if (onSuccess && data?.user) {
           onSuccess(data.user)
         } else {
@@ -94,18 +97,9 @@ export default function PharmacistLogin({ onSuccess }) {
     }
   }
 
-  const fillDoctorDemo = () => {
-    setEmail('dr.smith@pharminder.app')
-    setPassword('PharminderDemo123!')
-    if (authMode === 'signup') {
-      setFullName('Dr. Sarah Smith, PharmD')
-    }
-    setFormError('')
-  }
-
   return (
     <div className="min-h-[85vh] flex items-center justify-center py-6 sm:py-10 px-4 sm:px-6 lg:px-8">
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35, ease: 'easeOut' }}
@@ -113,10 +107,10 @@ export default function PharmacistLogin({ onSuccess }) {
       >
         {/* Brand Header */}
         <div className="text-center space-y-2.5">
-          <img 
-            src="/logo-doctor.png" 
-            alt="Pharminder Doctor Logo" 
-            className="w-20 h-20 sm:w-24 sm:h-24 mx-auto object-contain drop-shadow-md hover:scale-105 transition-transform duration-300 mb-1" 
+          <img
+            src="/logo-doctor.png"
+            alt="Pharminder Doctor Logo"
+            className="w-20 h-20 sm:w-24 sm:h-24 mx-auto object-contain drop-shadow-md hover:scale-105 transition-transform duration-300 mb-1"
           />
           <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-brand-teal dark:text-mint-300">
             pharminder
@@ -131,9 +125,8 @@ export default function PharmacistLogin({ onSuccess }) {
           </div>
         </div>
 
-        {/* Main Card with Dark Teal Accents */}
+        {/* Main Card */}
         <div className="bg-white/95 dark:bg-[#0d2232]/95 backdrop-blur-xl border-2 border-dark-teal-200/80 dark:border-dark-teal-700/60 rounded-3xl p-6 sm:p-9 shadow-soft-xl transition-all relative overflow-hidden">
-          {/* Subtle Top Accent Bar */}
           <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-brand-teal via-dark-teal-700 to-brand-mint" />
 
           {/* Clinician Access Note */}
@@ -146,7 +139,7 @@ export default function PharmacistLogin({ onSuccess }) {
                 Doctor &amp; Clinical Pharmacist Portal
               </span>
               <span className="text-slate-600 dark:text-slate-400 font-medium">
-                Prescribe medications, review patient intakes, check DDI/contraindications, and audit adherence.
+                Link patients by PHM ID, prescribe safely with DDI hard-locks, and manage schedules.
               </span>
             </div>
           </div>
@@ -160,13 +153,13 @@ export default function PharmacistLogin({ onSuccess }) {
                 setFormError('')
                 setFormSuccess('')
               }}
-              className={`pb-3 text-sm font-extrabold flex-1 text-center border-b-2 transition-all cursor-pointer ${
+              className={`pb-3 text-xs sm:text-sm font-extrabold flex-1 text-center border-b-2 transition-all cursor-pointer ${
                 authMode === 'signin'
                   ? 'border-brand-teal dark:border-brand-mint text-brand-teal dark:text-mint-300'
                   : 'border-transparent text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
               }`}
             >
-              Clinician Sign In
+              Sign In / تسجيل الدخول
             </button>
             <button
               type="button"
@@ -175,13 +168,13 @@ export default function PharmacistLogin({ onSuccess }) {
                 setFormError('')
                 setFormSuccess('')
               }}
-              className={`pb-3 text-sm font-extrabold flex-1 text-center border-b-2 transition-all cursor-pointer ${
+              className={`pb-3 text-xs sm:text-sm font-extrabold flex-1 text-center border-b-2 transition-all cursor-pointer ${
                 authMode === 'signup'
                   ? 'border-brand-teal dark:border-brand-mint text-brand-teal dark:text-mint-300'
                   : 'border-transparent text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
               }`}
             >
-              Register Clinician
+              Create Clinician Account / حساب جديد
             </button>
           </div>
 
@@ -202,35 +195,76 @@ export default function PharmacistLogin({ onSuccess }) {
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Full Name (Sign Up only) */}
             {authMode === 'signup' && (
-              <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                  Full Name &amp; Clinical Title
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                    <User className="w-4 h-4" />
+              <>
+                {/* Full Name & Clinical Title */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                    Full Name &amp; Clinical Title *
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 start-0 ps-3.5 flex items-center pointer-events-none text-slate-400">
+                      <User className="w-4 h-4" />
+                    </div>
+                    <input
+                      type="text"
+                      required
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      placeholder="e.g. Dr. Ahmed Hassan, PharmD"
+                      className="w-full ps-10 pe-4 py-3 rounded-2xl text-sm border border-slate-200 dark:border-dark-teal-800/80 bg-slate-50 dark:bg-dark-teal-950/70 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-teal focus:bg-white dark:focus:bg-dark-teal-900 transition-all shadow-inner"
+                    />
                   </div>
-                  <input
-                    type="text"
-                    required
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    placeholder="Dr. Sarah Smith, PharmD"
-                    className="w-full pl-10 pr-4 py-3 rounded-2xl text-sm border border-slate-200 dark:border-dark-teal-800/80 bg-slate-50 dark:bg-dark-teal-950/70 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-teal focus:bg-white dark:focus:bg-dark-teal-900 transition-all shadow-inner"
-                  />
                 </div>
-              </div>
+
+                {/* Medical Specialty & License Number */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                      Specialty (Optional)
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 start-0 ps-3.5 flex items-center pointer-events-none text-slate-400">
+                        <Award className="w-4 h-4" />
+                      </div>
+                      <input
+                        type="text"
+                        value={specialty}
+                        onChange={(e) => setSpecialty(e.target.value)}
+                        placeholder="e.g. Clinical Pharmacy"
+                        className="w-full ps-10 pe-3 py-3 rounded-2xl text-sm border border-slate-200 dark:border-dark-teal-800/80 bg-slate-50 dark:bg-dark-teal-950/70 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-teal focus:bg-white dark:focus:bg-dark-teal-900 transition-all shadow-inner"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                      License ID (Optional)
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 start-0 ps-3.5 flex items-center pointer-events-none text-slate-400">
+                        <FileCheck2 className="w-4 h-4" />
+                      </div>
+                      <input
+                        type="text"
+                        value={licenseNumber}
+                        onChange={(e) => setLicenseNumber(e.target.value)}
+                        placeholder="e.g. MED-40291"
+                        className="w-full ps-10 pe-3 py-3 rounded-2xl text-sm border border-slate-200 dark:border-dark-teal-800/80 bg-slate-50 dark:bg-dark-teal-950/70 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-teal focus:bg-white dark:focus:bg-dark-teal-900 transition-all shadow-inner"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </>
             )}
 
             {/* Email Address */}
             <div className="space-y-1.5">
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                Clinical Email Address
+                Clinical Email Address *
               </label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                <div className="absolute inset-y-0 start-0 ps-3.5 flex items-center pointer-events-none text-slate-400">
                   <Mail className="w-4 h-4" />
                 </div>
                 <input
@@ -238,35 +272,34 @@ export default function PharmacistLogin({ onSuccess }) {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="dr.smith@pharminder.app"
-                  className="w-full pl-10 pr-4 py-3 rounded-2xl text-sm border border-slate-200 dark:border-dark-teal-800/80 bg-slate-50 dark:bg-dark-teal-950/70 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-teal focus:bg-white dark:focus:bg-dark-teal-900 transition-all shadow-inner"
+                  placeholder="clinician@hospital.org"
+                  className="w-full ps-10 pe-4 py-3 rounded-2xl text-sm border border-slate-200 dark:border-dark-teal-800/80 bg-slate-50 dark:bg-dark-teal-950/70 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-teal focus:bg-white dark:focus:bg-dark-teal-900 transition-all shadow-inner"
                 />
               </div>
             </div>
 
             {/* Password */}
             <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                  Password
-                </label>
-              </div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                Password *
+              </label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                <div className="absolute inset-y-0 start-0 ps-3.5 flex items-center pointer-events-none text-slate-400">
                   <Lock className="w-4 h-4" />
                 </div>
                 <input
                   type={showPassword ? 'text' : 'password'}
                   required
+                  minLength={6}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••••••"
-                  className="w-full pl-10 pr-11 py-3 rounded-2xl text-sm border border-slate-200 dark:border-dark-teal-800/80 bg-slate-50 dark:bg-dark-teal-950/70 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-teal focus:bg-white dark:focus:bg-dark-teal-900 transition-all shadow-inner"
+                  placeholder="Minimum 6 characters"
+                  className="w-full ps-10 pe-11 py-3 rounded-2xl text-sm border border-slate-200 dark:border-dark-teal-800/80 bg-slate-50 dark:bg-dark-teal-950/70 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-teal focus:bg-white dark:focus:bg-dark-teal-900 transition-all shadow-inner"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                  className="absolute inset-y-0 end-0 pe-3.5 flex items-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
                   aria-label={showPassword ? 'Hide password' : 'Show password'}
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -274,48 +307,29 @@ export default function PharmacistLogin({ onSuccess }) {
               </div>
             </div>
 
-            {/* Submit Button (Dark Teal Theme) */}
+            {/* Submit Button */}
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3.5 px-6 rounded-2xl bg-brand-teal hover:bg-dark-teal-900 text-white font-black text-sm sm:text-base flex items-center justify-center gap-2.5 shadow-lg shadow-brand-teal/25 transition-all duration-200 hover:brightness-110 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer mt-4"
+              className="w-full min-h-[48px] py-3.5 px-6 rounded-2xl bg-brand-teal hover:bg-dark-teal-900 text-white font-black text-sm sm:text-base flex items-center justify-center gap-2.5 shadow-lg shadow-brand-teal/25 transition-all duration-200 hover:brightness-110 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer mt-4"
             >
               {loading ? (
                 <>
                   <Loader2 className="w-5 h-5 animate-spin" />
-                  <span>{authMode === 'signin' ? 'Authenticating Clinician…' : 'Registering Account…'}</span>
+                  <span>{authMode === 'signin' ? 'Authenticating Clinician…' : 'Creating Clinician Account…'}</span>
                 </>
               ) : (
                 <>
                   <span>
                     {authMode === 'signin'
                       ? 'Sign In to Doctor Portal'
-                      : 'Register Clinician Account'}
+                      : 'Create Clinician Account'}
                   </span>
                   <ArrowRight className="w-4 h-4 text-brand-mint" />
                 </>
               )}
             </button>
           </form>
-
-          {/* Quick Demo Autofill Chip (Doctor Only) */}
-          <div className="mt-6 pt-5 border-t border-slate-100 dark:border-dark-teal-800/60">
-            <div className="flex items-center justify-between text-xs text-slate-500 mb-3">
-              <span className="flex items-center gap-1.5 font-bold text-slate-600 dark:text-slate-300">
-                <Sparkles className="w-3.5 h-3.5 text-brand-mint" />
-                Quick Clinical Demo Access
-              </span>
-              <span className="text-[11px] text-slate-400">1-Tap Fill</span>
-            </div>
-            <button
-              type="button"
-              onClick={fillDoctorDemo}
-              className="w-full py-2.5 px-3 rounded-xl text-xs font-bold border border-dark-teal-200 dark:border-dark-teal-800 hover:bg-dark-teal-50/60 dark:hover:bg-dark-teal-900/60 text-slate-700 dark:text-slate-200 flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer shadow-xs"
-            >
-              <Stethoscope className="w-3.5 h-3.5 text-brand-teal dark:text-mint-300" />
-              <span>Fill Doctor Demo (Dr. Sarah Smith)</span>
-            </button>
-          </div>
         </div>
 
         {/* Security Notice */}
@@ -327,4 +341,3 @@ export default function PharmacistLogin({ onSuccess }) {
     </div>
   )
 }
-

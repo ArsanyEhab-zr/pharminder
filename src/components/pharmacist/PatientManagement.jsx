@@ -103,7 +103,7 @@ export default function PatientManagement({ onSelectPatientForPrescription }) {
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [age, setAge] = useState('')
-  const [gender, setGender] = useState('Female')
+  const [gender, setGender] = useState('')
   const [height, setHeight] = useState('')
   const [weight, setWeight] = useState('')
   const [diseaseInput, setDiseaseInput] = useState('')
@@ -148,6 +148,7 @@ export default function PatientManagement({ onSelectPatientForPrescription }) {
             status,
             dosage_instructions,
             frequency,
+            scheduled_times,
             medication:medication_id (
               name,
               category
@@ -269,13 +270,13 @@ export default function PatientManagement({ onSelectPatientForPrescription }) {
 
       if (profileError) throw profileError
 
-      // 2. Insert into patients_data table using supabaseAdmin
+      // 2. Insert into patients_data table (strictly clean empty fields unless entered)
       const { error: patientDataError } = await (supabaseAdmin || supabase)
         .from('patients_data')
         .insert({
           user_id: generatedId,
           age: age ? parseInt(age, 10) : null,
-          gender: gender,
+          gender: gender || null,
           height: height ? parseFloat(height) : null,
           weight: weight ? parseFloat(weight) : null,
           chronic_diseases: chronicDiseases,
@@ -293,10 +294,11 @@ export default function PatientManagement({ onSelectPatientForPrescription }) {
 
       setFormSuccess(`Patient "${fullName}" successfully registered!`)
       
-      // Reset form
+      // Reset form cleanly
       setFullName('')
       setEmail('')
       setAge('')
+      setGender('')
       setHeight('')
       setWeight('')
       setChronicDiseases([])
@@ -836,6 +838,7 @@ export default function PatientManagement({ onSelectPatientForPrescription }) {
                     onChange={(e) => setGender(e.target.value)}
                     className="w-full px-3 py-2 rounded-2xl text-xs sm:text-sm border border-slate-200 dark:border-dark-teal-800 bg-slate-50 dark:bg-dark-teal-950 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-mint"
                   >
+                    <option value="">Unspecified</option>
                     <option value="Female">Female</option>
                     <option value="Male">Male</option>
                     <option value="Other">Other</option>

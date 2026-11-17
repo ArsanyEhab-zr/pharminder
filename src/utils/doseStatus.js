@@ -1,3 +1,8 @@
+import {
+  getEffectiveAlarmTimesForRx,
+  formatHHMMDisplay,
+} from './alarmSchedules'
+
 /**
  * Dose Status Evaluation Engine
  * Single source of truth for medication schedule compliance.
@@ -56,37 +61,18 @@ export function isDoseOverdue(scheduledTime, doseLog, now = new Date()) {
 export function generatePrescriptionSlots(prescription, targetDate = new Date()) {
   if (!prescription) return []
 
-  const freq = (prescription.frequency || '').toLowerCase()
   const dateStr = targetDate.toISOString().split('T')[0]
+  const effectiveHHMMs = getEffectiveAlarmTimesForRx(prescription)
 
-  let timeStrings = ['08:00 AM']
-  if (freq.includes('8 hour') || freq.includes('3 time') || freq.includes('tid')) {
-    timeStrings = ['08:00 AM', '02:00 PM', '08:00 PM']
-  } else if (freq.includes('12 hour') || freq.includes('2 time') || freq.includes('bid')) {
-    timeStrings = ['08:00 AM', '08:00 PM']
-  } else if (freq.includes('morning')) {
-    timeStrings = ['08:00 AM']
-  } else if (freq.includes('evening') || freq.includes('dinner')) {
-    timeStrings = ['07:00 PM']
-  } else if (freq.includes('bedtime') || freq.includes('night')) {
-    timeStrings = ['10:00 PM']
-  } else if (freq.includes('as needed') || freq.includes('prn')) {
-    timeStrings = ['12:00 PM (As Needed)']
-  } else if (freq.includes('weekly')) {
-    timeStrings = ['09:00 AM (Weekly)']
-  }
-
-  return timeStrings.map((timeDisplay, index) => {
-    const clean = timeDisplay.replace(' (As Needed)', '').replace(' (Weekly)', '')
-    const [rawTime, modifier] = clean.split(' ')
-    let [hours, minutes] = rawTime.split(':').map(Number)
-    if (modifier === 'PM' && hours !== 12) hours += 12
-    if (modifier === 'AM' && hours === 12) hours = 0
+  return effectiveHHMMs.map((hhmm, index) => {
+    const [hStr, mStr] = hhmm.split(':')
+    const hours = Number.parseInt(hStr, 10)
+    const minutes = Number.parseInt(mStr, 10) || 0
 
     const slotDate = new Date(targetDate)
-    slotDate.setHours(hours, minutes || 0, 0, 0)
+    slotDate.setHours(hours, minutes, 0, 0)
 
-    const slotKey = `${prescription.id}-${dateStr}-${index}`
+    const slotKey = `${prescription.id}-${dateStr}-${hhmm}`
 
     return {
       slotKey,
@@ -94,10 +80,11 @@ export function generatePrescriptionSlots(prescription, targetDate = new Date())
       medicationName: prescription.medication?.name || 'Medication',
       dosageInstructions: prescription.dosage_instructions || 'Take as prescribed',
       dosageForm: prescription.medication?.dosage_form || 'Tablet',
-      timeDisplay,
+      timeDisplay: formatHHMMDisplay(hhmm),
+      hhmm,
       timeIndex: index,
       scheduledHours: hours,
-      scheduledMinutes: minutes || 0,
+      scheduledMinutes: minutes,
       scheduledDate: slotDate,
       scheduledIso: slotDate.toISOString(),
     }

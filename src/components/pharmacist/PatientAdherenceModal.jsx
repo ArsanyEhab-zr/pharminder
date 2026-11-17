@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { supabase, supabaseAdmin } from '../../lib/supabase'
+import { useAuth } from '../../hooks/useAuth'
 import { broadcastMissedDosePing } from '../../utils/clinicalAlerts'
 import { getDoseStatus, generatePrescriptionSlots, findMatchingLog } from '../../utils/doseStatus'
 import Tooltip from '../common/Tooltip'
@@ -11,7 +12,6 @@ import {
   Clock, 
   Pill, 
   Calendar, 
-  Sparkles, 
   Flame, 
   Check, 
   BellRing, 
@@ -20,10 +20,10 @@ import {
 
 export default function PatientAdherenceModal({ patient, onClose, onPrescribeNew }) {
   const { t } = useTranslation()
+  const { profile } = useAuth()
   const [_loading, setLoading] = useState(true)
   const [prescriptions, setPrescriptions] = useState([])
   const [doseLogs, setDoseLogs] = useState([])
-  const [seedingDemo, setSeedingDemo] = useState(false)
   const [filterMedId, setFilterMedId] = useState('all')
   const [nowDate] = useState(() => new Date())
   const [pingingDoseId, setPingingDoseId] = useState(null)
@@ -50,6 +50,7 @@ export default function PatientAdherenceModal({ patient, onClose, onPrescribeNew
           patient_id,
           dosage_instructions,
           frequency,
+          scheduled_times,
           start_date,
           end_date,
           status,
@@ -139,115 +140,6 @@ export default function PatientAdherenceModal({ patient, onClose, onPrescribeNew
     }
   }, [fetchPatientAdherenceData, patient?.id])
 
-  // Helper to generate a realistic 7-day demo history if database has 0 records
-  const handleSeedDemoAdherence = async () => {
-    if (!patient?.id) return
-
-    try {
-      setSeedingDemo(true)
-      const client = supabaseAdmin || supabase
-
-      // 1. Ensure at least 1-2 prescriptions exist
-      let targetRxId = prescriptions[0]?.id
-
-      if (!targetRxId) {
-        // Find existing medication
-        const { data: meds } = await client.from('medications').select('id').limit(1)
-        const medId = meds?.[0]?.id
-
-        if (medId) {
-          const { data: newRx } = await client
-            .from('prescriptions')
-            .insert({
-              patient_id: patient.id,
-              medication_id: medId,
-              dosage_instructions: 'Take 1 tablet twice daily with food',
-              frequency: 'Every 12 hours (2 times daily)',
-              start_date: new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0],
-              status: 'active',
-            })
-            .select()
-            .single()
-
-          targetRxId = newRx?.id
-        }
-      }
-
-      if (targetRxId) {
-        // Create 7 days of logs (morning and evening = 14 doses) with ~85% compliance for past days
-        // TODAY (dayOffset === 0) is NEVER defaulted to taken!
-        const simulatedLogs = []
-        const now = Date.now()
-
-        for (let dayOffset = 6; dayOffset >= 0; dayOffset--) {
-          const dayDate = new Date(now - dayOffset * 86400000)
-          const dateStr = dayDate.toISOString().split('T')[0]
-
-          // Morning Dose (08:00 AM)
-          const morningSched = new Date(`${dateStr}T08:00:00Z`).toISOString()
-          const isMorningOverdue = Date.now() - new Date(morningSched).getTime() >= 30 * 60 * 1000
-
-          if (dayOffset === 0) {
-            // Today: never taken by default!
-            simulatedLogs.push({
-              prescription_id: targetRxId,
-              scheduled_time: morningSched,
-              taken_time: null,
-              status: isMorningOverdue ? 'missed' : 'pending',
-            })
-          } else {
-            // Past days: realistic historical record
-            const morningTaken = dayOffset === 2 
-              ? null // Missed on day 2
-              : new Date(new Date(morningSched).getTime() + (Math.random() * 20 - 5) * 60000).toISOString()
-
-            simulatedLogs.push({
-              prescription_id: targetRxId,
-              scheduled_time: morningSched,
-              taken_time: morningTaken,
-              status: morningTaken ? 'taken' : 'missed',
-            })
-          }
-
-          // Evening Dose (08:00 PM)
-          const eveningSched = new Date(`${dateStr}T20:00:00Z`).toISOString()
-          const isEveningOverdue = Date.now() - new Date(eveningSched).getTime() >= 30 * 60 * 1000
-
-          if (dayOffset === 0) {
-            // Today: never taken by default!
-            simulatedLogs.push({
-              prescription_id: targetRxId,
-              scheduled_time: eveningSched,
-              taken_time: null,
-              status: isEveningOverdue ? 'missed' : 'pending',
-            })
-          } else {
-            // Past days: evening dose
-            const eveningTaken = dayOffset === 5
-              ? null // Missed on day 5
-              : new Date(new Date(eveningSched).getTime() + (Math.random() * 25) * 60000).toISOString()
-
-            simulatedLogs.push({
-              prescription_id: targetRxId,
-              scheduled_time: eveningSched,
-              taken_time: eveningTaken,
-              status: eveningTaken ? 'taken' : 'missed',
-            })
-          }
-        }
-
-        // Insert into database
-        await client.from('dose_logs').insert(simulatedLogs)
-      }
-
-      await fetchPatientAdherenceData()
-    } catch (err) {
-      console.error('Failed to seed demo adherence data:', err)
-    } finally {
-      setSeedingDemo(false)
-    }
-  }
-
   // Handle Real-Time Missed Dose Ping to Patient Device
   const handlePingPatient = async (log) => {
     if (!patient?.id) return
@@ -261,7 +153,7 @@ export default function PatientAdherenceModal({ patient, onClose, onPrescribeNew
       setPingingDoseId(logId)
       const res = await broadcastMissedDosePing({
         patientId: patient.id,
-        doctorName: 'Dr. Sarah Smith, PharmD',
+        doctorName: profile?.full_name || 'Attending Clinician',
         prescriptionId: matchedRx?.id || log?.prescription_id || null,
         medicationName: medName,
         dosageInstructions: dosage,
@@ -749,17 +641,8 @@ export default function PatientAdherenceModal({ patient, onClose, onPrescribeNew
                   No Dose Logs Found
                 </h4>
                 <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed font-medium">
-                  This patient has not logged any doses yet today. You can simulate a 7-day adherence history for graduation project testing.
+                  This patient has not logged any doses yet. Dose history appears automatically once medications are prescribed and logged.
                 </p>
-                <button
-                  type="button"
-                  onClick={handleSeedDemoAdherence}
-                  disabled={seedingDemo}
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand-mint text-dark-teal-950 text-xs font-extrabold hover:bg-mint-400 transition-colors shadow-md shadow-brand-mint/20 cursor-pointer"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  <span>{seedingDemo ? 'Simulating…' : 'Simulate 7-Day Adherence Log'}</span>
-                </button>
               </div>
             ) : (
               <div className="overflow-x-auto">

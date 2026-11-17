@@ -153,8 +153,8 @@ export default function PatientMedicalProfileForm({
   // 1. Personal & Vitals State (Strictly isolated to current user — zero demo defaults)
   const [fullName, setFullName] = useState(profile?.full_name || '')
   const [age, setAge] = useState(patientData?.age ?? '')
-  const [gender, setGender] = useState(patientData?.gender || 'Female')
-  const [bloodType, setBloodType] = useState(parsedIntake.bloodType || 'O+')
+  const [gender, setGender] = useState(patientData?.gender || '')
+  const [bloodType, setBloodType] = useState(parsedIntake.bloodType || '')
   const [height, setHeight] = useState(patientData?.height ?? '')
   const [weight, setWeight] = useState(patientData?.weight ?? '')
   const [emergencyContact, setEmergencyContact] = useState(
@@ -202,7 +202,7 @@ export default function PatientMedicalProfileForm({
     setFullName(profile?.full_name || '')
     if (patientData) {
       setAge(patientData.age ?? '')
-      setGender(patientData.gender || 'Female')
+      setGender(patientData.gender || '')
       setHeight(patientData.height ?? '')
       setWeight(patientData.weight ?? '')
       setChronicDiseases(
@@ -211,7 +211,7 @@ export default function PatientMedicalProfileForm({
           : []
       )
       const intake = parseClinicalIntake(patientData.family_history || '')
-      setBloodType(intake.bloodType || 'O+')
+      setBloodType(intake.bloodType || '')
       setEmergencyContact(intake.emergencyContact || '')
       setSelectedSymptoms(Array.isArray(intake.symptomTags) ? intake.symptomTags : [])
       setCustomSymptomNotes(intake.currentSymptoms || '')
@@ -222,11 +222,11 @@ export default function PatientMedicalProfileForm({
     } else {
       // Explicitly reset all medical fields if patient has no record yet
       setAge('')
-      setGender('Female')
+      setGender('')
       setHeight('')
       setWeight('')
       setChronicDiseases([])
-      setBloodType('O+')
+      setBloodType('')
       setEmergencyContact('')
       setSelectedSymptoms([])
       setCustomSymptomNotes('')
@@ -670,6 +670,7 @@ export default function PatientMedicalProfileForm({
                     onChange={(e) => setGender(e.target.value)}
                     className="w-full min-h-[48px] px-4 py-3 rounded-2xl text-sm sm:text-base font-bold border border-slate-200 dark:border-dark-teal-800 bg-slate-50 dark:bg-dark-teal-950 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-mint"
                   >
+                    <option value="">Select…</option>
                     <option value="Female">{t('profileForm.female')}</option>
                     <option value="Male">{t('profileForm.male')}</option>
                     <option value="Other">{t('profileForm.other')}</option>

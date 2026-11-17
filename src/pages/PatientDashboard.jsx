@@ -7,7 +7,7 @@ import { useMedicationReminders } from '../hooks/useMedicationReminders'
 import { parseClinicalIntake } from '../utils/patientMedicalNotes'
 import {
   loadAllCustomAlarmTimes,
-  saveCustomAlarmTimes,
+  updatePrescriptionScheduledTimes,
   getEffectiveAlarmTimesForRx,
   formatHHMMDisplay,
 } from '../utils/alarmSchedules'
@@ -22,7 +22,6 @@ import {
   CheckCircle2, 
   ShieldCheck, 
   Activity, 
-  Sparkles, 
   RefreshCw, 
   HeartPulse, 
   Stethoscope, 
@@ -62,23 +61,32 @@ export default function PatientDashboard() {
   const [prescriptions, setPrescriptions] = useState([])
   const [patientData, setPatientData] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [seedingDemo, setSeedingDemo] = useState(false)
   const [statusMessage, setStatusMessage] = useState('')
   const [copiedCode, setCopiedCode] = useState(false)
   const [customTimesMap, setCustomTimesMap] = useState(() => loadAllCustomAlarmTimes(user?.id))
-  const [nowTimestamp] = useState(() => Date.now())
 
   useEffect(() => {
     setCustomTimesMap(loadAllCustomAlarmTimes(user?.id))
   }, [user?.id])
 
   const handleUpdateCustomTimes = useCallback(
-    (rxId, times) => {
-      const storageOwnerId = user?.id || 'guest-patient'
-      const nextMap = saveCustomAlarmTimes(storageOwnerId, rxId, times)
-      setCustomTimesMap(nextMap)
+    async (rxId, times) => {
+      try {
+        const targetRx = prescriptions.find((p) => p.id === rxId) || { id: rxId }
+        const savedTimes = await updatePrescriptionScheduledTimes(user?.id, targetRx, times)
+        setPrescriptions((prev) =>
+          prev.map((rx) => (rx.id === rxId ? { ...rx, scheduled_times: savedTimes } : rx))
+        )
+        setCustomTimesMap((prev) => ({ ...prev, [rxId]: savedTimes }))
+        setStatusMessage('Medication alarm times updated in database.')
+        setTimeout(() => setStatusMessage(''), 3000)
+      } catch (err) {
+        console.error('Error saving prescription scheduled_times:', err)
+        setStatusMessage('Failed to save alarm times. Please try again.')
+        setTimeout(() => setStatusMessage(''), 4000)
+      }
     },
-    [user?.id]
+    [user?.id, prescriptions]
   )
 
   const handleCopyPatientCode = async () => {
@@ -154,6 +162,7 @@ export default function PatientDashboard() {
           medication_id,
           dosage_instructions,
           frequency,
+          scheduled_times,
           start_date,
           end_date,
           status,
@@ -236,131 +245,7 @@ export default function PatientDashboard() {
     [patientData]
   )
 
-  const handleSeedDemoPrescriptions = async () => {
-    if (!user?.id) return
-
-    try {
-      setSeedingDemo(true)
-      setStatusMessage('Setting up your medication schedule…')
-      const client = supabaseAdmin || supabase
-
-      const { data: meds } = await client
-        .from('medications')
-        .select('id, name')
-        .limit(5)
-
-      const amox = meds?.find((m) => m.name.toLowerCase().includes('amoxicillin')) || meds?.[0]
-      const metf = meds?.find((m) => m.name.toLowerCase().includes('metformin')) || meds?.[1]
-      const ator = meds?.find((m) => m.name.toLowerCase().includes('atorvastatin')) || meds?.[2]
-
-      const today = new Date()
-      const todayStr = today.toISOString().split('T')[0]
-
-      const endSeven = new Date()
-      endSeven.setDate(today.getDate() + 7)
-      const endSevenStr = endSeven.toISOString().split('T')[0]
-
-      const endThirty = new Date()
-      endThirty.setDate(today.getDate() + 30)
-      const endThirtyStr = endThirty.toISOString().split('T')[0]
-
-      const sampleRxs = []
-
-      if (amox?.id) {
-        sampleRxs.push({
-          patient_id: user.id,
-          medication_id: amox.id,
-          dosage_instructions: 'Take 1 capsule by mouth every 8 hours with water',
-          frequency: 'Every 8 hours (3 times daily)',
-          start_date: todayStr,
-          end_date: endSevenStr,
-          status: 'active',
-        })
-      }
-
-      if (metf?.id) {
-        sampleRxs.push({
-          patient_id: user.id,
-          medication_id: metf.id,
-          dosage_instructions: 'Take 1 tablet twice daily with morning and evening meals',
-          frequency: 'Every 12 hours (2 times daily)',
-          start_date: todayStr,
-          end_date: endThirtyStr,
-          status: 'active',
-        })
-      }
-
-      if (ator?.id) {
-        sampleRxs.push({
-          patient_id: user.id,
-          medication_id: ator.id,
-          dosage_instructions: 'Take 1 tablet at bedtime once daily',
-          frequency: 'Once daily at bedtime',
-          start_date: todayStr,
-          end_date: endThirtyStr,
-          status: 'active',
-        })
-      }
-
-      if (sampleRxs.length > 0) {
-        const { error: insertErr } = await client.from('prescriptions').insert(sampleRxs)
-        if (insertErr) throw insertErr
-      }
-
-      setStatusMessage('Demo prescriptions loaded successfully!')
-      await loadPatientData()
-    } catch (err) {
-      console.error('Error seeding demo prescriptions:', err)
-      setStatusMessage('Failed to initialize demo medications.')
-    } finally {
-      setSeedingDemo(false)
-      setTimeout(() => setStatusMessage(''), 4000)
-    }
-  }
-
-  const displayedPrescriptions = useMemo(() => {
-    if (prescriptions.length > 0) return prescriptions
-
-    const nowTime = nowTimestamp
-    const todayIso = new Date(nowTime).toISOString().split('T')[0]
-    const endSevenIso = new Date(nowTime + 7 * 86400000).toISOString().split('T')[0]
-    const endThirtyIso = new Date(nowTime + 30 * 86400000).toISOString().split('T')[0]
-
-    return [
-      {
-        id: 'demo-rx-1',
-        dosage_instructions: 'Take 1 capsule by mouth every 8 hours with food',
-        frequency: 'Every 8 hours (3 times daily)',
-        start_date: todayIso,
-        end_date: endSevenIso,
-        status: 'active',
-        medication: {
-          id: 'demo-med-1',
-          name: 'Amoxicillin 500mg',
-          category: 'Antibiotic',
-          dosage_form: 'Capsule',
-          description: 'Broad-spectrum penicillin antibiotic for bacterial infections',
-        },
-      },
-      {
-        id: 'demo-rx-2',
-        dosage_instructions: 'Take 1 tablet twice daily with morning and evening meals',
-        frequency: 'Every 12 hours (2 times daily)',
-        start_date: todayIso,
-        end_date: endThirtyIso,
-        status: 'active',
-        medication: {
-          id: 'demo-med-2',
-          name: 'Metformin 850mg',
-          category: 'Antidiabetic',
-          dosage_form: 'Tablet',
-          description: 'First-line biguanide therapy for glycemic management',
-        },
-      },
-    ]
-  }, [prescriptions, nowTimestamp])
-
-  const isUsingFallbackDemo = prescriptions.length === 0
+  const displayedPrescriptions = prescriptions
 
   // Medication Reminder & Notification Hook (Web Audio API Chime + Vibration + SW Notification + Realtime Pings)
   const {
@@ -382,23 +267,23 @@ export default function PatientDashboard() {
   })
 
   const nextScheduledDoseLabel = useMemo(() => {
+    if (displayedPrescriptions.length === 0) return '—'
     const allSlots = []
     for (const rx of displayedPrescriptions) {
       const times = getEffectiveAlarmTimesForRx(rx, customTimesMap)
       allSlots.push(...times)
     }
     const sorted = Array.from(new Set(allSlots)).sort()
-    if (sorted.length === 0) return '08:00 AM'
+    if (sorted.length === 0) return '—'
     const now = new Date()
     const currentHHMM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
     const upcoming = sorted.find((hhmm) => hhmm >= currentHHMM) || sorted[0]
     return formatHHMMDisplay(upcoming)
   }, [displayedPrescriptions, customTimesMap])
 
-  const chronicList =
-    patientData?.chronic_diseases?.length > 0
-      ? patientData.chronic_diseases
-      : ['Type 2 Diabetes', 'Hypertension']
+  const chronicList = Array.isArray(patientData?.chronic_diseases)
+    ? patientData.chronic_diseases
+    : []
 
   return (
     <div className="space-y-6 sm:space-y-8 relative">
@@ -460,7 +345,7 @@ export default function PatientDashboard() {
               </div>
 
               <h1 className="text-xl sm:text-3xl lg:text-4xl font-black tracking-tight text-slate-900 dark:text-slate-100 truncate">
-                {greeting}, {profile?.full_name || user?.email?.split('@')[0] || 'Jane Doe'}
+                {greeting}, {profile?.full_name || user?.email?.split('@')[0] || 'Patient'}
               </h1>
 
               <p className="text-sm sm:text-base text-slate-600 dark:text-slate-300 max-w-2xl font-medium leading-relaxed break-words">
@@ -471,7 +356,10 @@ export default function PatientDashboard() {
               <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
                 <span className="px-3.5 py-1.5 rounded-2xl bg-rose-50 dark:bg-rose-950/70 border border-rose-200 dark:border-rose-800/80 text-rose-800 dark:text-rose-200 font-bold flex items-center gap-1.5">
                   <HeartPulse className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                  <span>{t('patient.chronicConditions')}: {chronicList.join(', ')}</span>
+                  <span>
+                    {t('patient.chronicConditions')}:{' '}
+                    {chronicList.length > 0 ? chronicList.join(', ') : 'None Reported'}
+                  </span>
                 </span>
 
                 {parsedIntake.currentSymptoms && (
@@ -547,18 +435,6 @@ export default function PatientDashboard() {
                 <span>Sync</span>
               </button>
             </div>
-
-            {isUsingFallbackDemo && (
-              <button
-                type="button"
-                onClick={handleSeedDemoPrescriptions}
-                disabled={seedingDemo}
-                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-brand-teal hover:bg-dark-teal-900 text-white text-xs font-extrabold shadow-sm transition-all duration-200 active:scale-95 cursor-pointer"
-              >
-                <Sparkles className="w-4 h-4 text-brand-mint" />
-                <span>{seedingDemo ? 'Loading…' : 'Save Demo Prescriptions to DB'}</span>
-              </button>
-            )}
           </div>
         </div>
 

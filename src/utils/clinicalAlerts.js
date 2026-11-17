@@ -23,7 +23,7 @@ export const CUSTOM_EVENT_NAME = 'pharminder:missed-dose-ping'
  */
 export async function broadcastMissedDosePing({
   patientId,
-  doctorName = 'Dr. Sarah Smith, PharmD',
+  doctorName = 'Attending Clinician',
   prescriptionId = null,
   medicationName = 'Prescribed Medication',
   dosageInstructions = 'Take 1 dose immediately with water',

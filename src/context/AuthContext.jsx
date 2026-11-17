@@ -4,17 +4,7 @@ import { supabase, supabaseAdmin } from '../lib/supabase'
 
 const inferRoleFromUser = (u) => {
   if (!u) return null
-  if (u.user_metadata?.role) return u.user_metadata.role
-  const email = (u.email || '').toLowerCase()
-  if (
-    email.includes('smith') ||
-    email.includes('pharmacist') ||
-    email.includes('doctor') ||
-    email.includes('dr.')
-  ) {
-    return 'pharmacist'
-  }
-  return 'patient'
+  return u.user_metadata?.role || null
 }
 
 export function AuthProvider({ children }) {
@@ -57,12 +47,12 @@ export function AuthProvider({ children }) {
       const fallbackRole = inferRoleFromUser(currentUser)
       const fallbackName =
         currentUser.user_metadata?.full_name ||
-        (fallbackRole === 'pharmacist'
-          ? 'Dr. Sarah Smith, PharmD'
-          : currentUser.email?.split('@')[0] || 'Patient')
+        currentUser.email?.split('@')[0] ||
+        'User'
 
-      // Immediately set inferred role and temporary profile so routes never hang
-      setRole((prev) => prev || fallbackRole)
+      if (fallbackRole) {
+        setRole((prev) => prev || fallbackRole)
+      }
       setProfile((prev) =>
         prev && prev.id === currentUser.id
           ? prev
@@ -77,8 +67,8 @@ export function AuthProvider({ children }) {
       try {
         let userProfile = await fetchProfile(currentUser.id)
 
-        // If profile doesn't exist yet, auto-create using auth metadata
-        if (!userProfile) {
+        // Create profile from verified auth metadata ONLY if row doesn't exist yet and role is known
+        if (!userProfile && fallbackRole) {
           const client = supabaseAdmin || supabase
           const { data: newProfile, error: upsertErr } = await client
             .from('profiles')
@@ -196,54 +186,29 @@ export function AuthProvider({ children }) {
     setError(null)
     setLoading(true)
     try {
-      let { data, error: signInErr } = await supabase.auth.signInWithPassword({
-        email,
+      const normalizedEmail = (email || '').trim().toLowerCase()
+      const { data, error: signInErr } = await supabase.auth.signInWithPassword({
+        email: normalizedEmail,
         password,
       })
-
-      // If sign in fails due to invalid credentials or unconfirmed email,
-      // auto-heal by confirming email and updating password in auth.users
-      if (signInErr) {
-        console.warn(
-          'Standard signIn failed, attempting auto-heal via supabaseAdmin:',
-          signInErr.message
-        )
-        try {
-          const { data: usersData } = await supabaseAdmin.auth.admin.listUsers()
-          const matchedUser = usersData?.users?.find(
-            (u) => u.email?.toLowerCase() === email.toLowerCase()
-          )
-
-          if (matchedUser) {
-            const { error: updateErr } = await supabaseAdmin.auth.admin.updateUserById(
-              matchedUser.id,
-              {
-                email_confirm: true,
-                password: password,
-              }
-            )
-
-            if (!updateErr) {
-              const retryRes = await supabase.auth.signInWithPassword({
-                email,
-                password,
-              })
-              data = retryRes.data
-              signInErr = retryRes.error
-            }
-          }
-        } catch (healErr) {
-          console.warn('Auto-heal lookup failed:', healErr)
-        }
-      }
 
       if (signInErr) throw signInErr
 
       if (data?.user) {
         const userProfile = await syncUserProfile(data.user)
+        const resolvedRole = userProfile?.role || data.user.user_metadata?.role
 
-        if (expectedRole && userProfile?.role && userProfile.role !== expectedRole) {
-          console.warn(`User signed in as ${userProfile.role}, portal requested ${expectedRole}`)
+        if (expectedRole && resolvedRole && resolvedRole !== expectedRole) {
+          await supabase.auth.signOut()
+          setUser(null)
+          setSession(null)
+          setProfile(null)
+          setRole(null)
+          throw new Error(
+            expectedRole === 'patient'
+              ? 'Access restricted: Clinician accounts must sign in through the Doctor Portal.'
+              : 'Access restricted: Patient accounts must sign in through the Patient Portal.'
+          )
         }
       }
 
@@ -256,78 +221,117 @@ export function AuthProvider({ children }) {
     }
   }
 
-  const signUp = async ({ email, password, fullName, role: requestedRole = 'patient' }) => {
+  const signUp = async ({
+    email,
+    password,
+    fullName,
+    role: requestedRole = 'patient',
+    age = null,
+    gender = null,
+    specialty = '',
+    licenseNumber = '',
+  }) => {
     setError(null)
     setLoading(true)
     try {
-      let authUser = null
-
-      const { data: createData, error: createErr } = await supabaseAdmin.auth.admin.createUser({
-        email,
-        password,
-        email_confirm: true,
-        user_metadata: {
-          full_name: fullName,
-          role: requestedRole,
-        },
-      })
-
-      if (!createErr && createData?.user) {
-        authUser = createData.user
-      } else if (createErr) {
-        const { data: listData } = await supabaseAdmin.auth.admin.listUsers()
-        const existingUser = listData?.users?.find(
-          (u) => u.email?.toLowerCase() === email.toLowerCase()
-        )
-
-        if (existingUser) {
-          const { data: updateData, error: updateErr } =
-            await supabaseAdmin.auth.admin.updateUserById(existingUser.id, {
-              password,
-              email_confirm: true,
-              user_metadata: {
-                full_name: fullName,
-                role: requestedRole,
-              },
-            })
-          if (updateErr) throw updateErr
-          authUser = updateData?.user || existingUser
-        } else {
-          throw createErr
-        }
+      const normalizedEmail = (email || '').trim().toLowerCase()
+      const cleanedName = (fullName || '').trim()
+      if (!cleanedName || !normalizedEmail || !password) {
+        throw new Error('Full name, email address, and password are required.')
       }
 
-      if (authUser) {
-        const { data: newProfile, error: profileErr } = await supabaseAdmin
-          .from('profiles')
-          .upsert({
-            id: authUser.id,
-            role: requestedRole,
-            full_name: fullName,
-            email,
-          })
-          .select()
-          .maybeSingle()
+      const userMetadata = {
+        full_name: cleanedName,
+        role: requestedRole,
+        ...(specialty?.trim() ? { specialty: specialty.trim() } : {}),
+        ...(licenseNumber?.trim() ? { license_number: licenseNumber.trim() } : {}),
+      }
 
-        if (!profileErr && newProfile) {
-          setProfile(newProfile)
-          setRole(newProfile.role)
+      let authUser = null
+      let activeSession = null
+
+      if (supabaseAdmin) {
+        const { data: listData } = await supabaseAdmin.auth.admin.listUsers()
+        const existingUser = listData?.users?.find(
+          (u) => u.email?.toLowerCase() === normalizedEmail
+        )
+        if (existingUser) {
+          throw new Error('An account with this email already exists. Please sign in instead.')
         }
 
-        if (requestedRole === 'patient') {
-          await supabaseAdmin
-            .from('patients_data')
-            .upsert(
-              {
-                user_id: authUser.id,
-                chronic_diseases: [],
-              },
-              { onConflict: 'user_id' }
-            )
-        }
+        const { data: createData, error: createErr } = await supabaseAdmin.auth.admin.createUser({
+          email: normalizedEmail,
+          password,
+          email_confirm: true,
+          user_metadata: userMetadata,
+        })
 
+        if (createErr) throw createErr
+        authUser = createData?.user || null
+      } else {
+        const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
+          email: normalizedEmail,
+          password,
+          options: {
+            data: userMetadata,
+          },
+        })
+
+        if (signUpErr) throw signUpErr
+        if (signUpData?.user && Array.isArray(signUpData.user.identities) && signUpData.user.identities.length === 0) {
+          throw new Error('An account with this email already exists. Please sign in instead.')
+        }
+        authUser = signUpData?.user || null
+        activeSession = signUpData?.session || null
+      }
+
+      if (!authUser) {
+        throw new Error('Failed to create user account.')
+      }
+
+      const dbClient = supabaseAdmin || supabase
+      const { data: newProfile, error: profileErr } = await dbClient
+        .from('profiles')
+        .upsert({
+          id: authUser.id,
+          role: requestedRole,
+          full_name: cleanedName,
+          email: normalizedEmail,
+        })
+        .select()
+        .maybeSingle()
+
+      if (profileErr) {
+        throw profileErr
+      }
+
+      if (newProfile) {
+        setProfile(newProfile)
+        setRole(newProfile.role)
+      }
+
+      // Initialize 100% clean, empty patients_data record for new patient accounts
+      if (requestedRole === 'patient') {
+        const parsedAge = age !== null && age !== '' ? parseInt(age, 10) : null
+        await dbClient
+          .from('patients_data')
+          .upsert(
+            {
+              user_id: authUser.id,
+              age: Number.isFinite(parsedAge) ? parsedAge : null,
+              gender: gender ? gender.trim() : null,
+              height: null,
+              weight: null,
+              chronic_diseases: [],
+              family_history: null,
+            },
+            { onConflict: 'user_id' }
+          )
+      }
+
+      if (!activeSession) {
         const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
-          email,
+          email: normalizedEmail,
           password,
         })
 
@@ -336,11 +340,11 @@ export function AuthProvider({ children }) {
         if (signInData?.user) {
           await syncUserProfile(signInData.user)
         }
-
         return { data: signInData, error: null }
       }
 
-      return { data: null, error: new Error('Failed to create or configure user.') }
+      await syncUserProfile(authUser)
+      return { data: { user: authUser, session: activeSession }, error: null }
     } catch (err) {
       setError(err.message)
       return { data: null, error: err }

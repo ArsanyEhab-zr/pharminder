@@ -39,18 +39,18 @@ export default function ActiveMedicationsList({
     setDraftTimes(draftTimes.filter((item) => item !== timeStr))
   }
 
-  const handleSaveTimes = (rxId) => {
+  const handleSaveTimes = async (rxId) => {
     if (onUpdateCustomTimes) {
-      onUpdateCustomTimes(rxId, draftTimes)
+      await onUpdateCustomTimes(rxId, draftTimes)
     }
     setEditingRxId(null)
   }
 
-  const handleResetDefaultTimes = (rx) => {
+  const handleResetDefaultTimes = async (rx) => {
     const defaults = getDefaultTimesForFrequency(rx.frequency)
     setDraftTimes(defaults)
     if (onUpdateCustomTimes) {
-      onUpdateCustomTimes(rx.id, [])
+      await onUpdateCustomTimes(rx.id, defaults)
     }
   }
 

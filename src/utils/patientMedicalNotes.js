@@ -28,9 +28,9 @@ export function parseClinicalIntake(rawFamilyHistory = '') {
     allergyTags: [],
     homeMeds: '',
     homeMedTags: [],
-    bloodType: 'O+',
+    bloodType: '',
     emergencyContact: '',
-    lifestyleNotes: 'Non-smoker',
+    lifestyleNotes: '',
     familyHistory: '',
   }
 
@@ -74,9 +74,9 @@ export function parseClinicalIntake(rawFamilyHistory = '') {
   const currentSymptoms = extractSection('SYMPTOMS')
   const allergies = extractSection('ALLERGIES')
   const homeMeds = extractSection('HOME_MEDS')
-  const bloodType = extractSection('BLOOD_TYPE') || 'O+'
+  const bloodType = extractSection('BLOOD_TYPE') || ''
   const emergencyContact = extractSection('EMERGENCY_CONTACT')
-  const lifestyleNotes = extractSection('SMOKING_ALCOHOL') || 'Non-smoker'
+  const lifestyleNotes = extractSection('SMOKING_ALCOHOL') || ''
   const familyHistory = extractSection('FAMILY_HISTORY')
 
   const splitTags = (str) =>
@@ -109,9 +109,9 @@ export function serializeClinicalIntake({
   currentSymptoms = '',
   allergies = '',
   homeMeds = '',
-  bloodType = 'O+',
+  bloodType = '',
   emergencyContact = '',
-  lifestyleNotes = 'Non-smoker',
+  lifestyleNotes = '',
   familyHistory = '',
 }) {
   const lines = []
